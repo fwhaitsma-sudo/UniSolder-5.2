@@ -43,6 +43,9 @@ static UINT8 ManualSleep;   //sleep entered by holding the encoder button for 5 
 static UINT8 SleepNAP;      //holder state while in manual sleep (to wake on lift)
 static UINT8 LPArmed;       //button held past 2 s: release opens menu, 5 s sleeps
 static UINT8 IgnoreKey;     //ignore the rest of a press that woke from manual sleep
+static UINT8 DblTicks;      //two-iron adapter: time left to press again for a double-press
+
+#define DBL_PRESS_TICKS 20  //0.4 s window for the second press of a double-press
 
 static union {
     UINT32 DW;
@@ -138,10 +141,24 @@ void MenuInit(){
     SleepNAP = 1;
     LPArmed = 0;
     IgnoreKey = 0;
+    DblTicks = 0;
     NapTicks = pars.NapFilterTicks + 1;
     TipChangeTicks = 0;
     CalCh = 0;
     Enc = LastEnc = 0;
+}
+
+//Two-iron adapter: make the other iron active. Each iron keeps its own set
+//temperature: the active one is TTemp, the other one is kept in pars.TTempAlt.
+static void SwitchIron(void){
+    unsigned int t = TTemp;
+    TTemp = pars.TTempAlt;
+    pars.TTempAlt = t;
+    pars.ActIron = pars.ActIron ? 0 : 1;
+    IronPairReload();
+    ManualSleep = 0;
+    TempBeep = 1;       //beep again when the new iron reaches its temperature
+    BeepTicks = 6;
 }
 
 void OLEDTasks(int powerLost){
@@ -177,8 +194,29 @@ void OLEDTasks(int powerLost){
                         SleepNAP = FNAP;
                     }
                     if(IgnoreKey && !BTicks[1].o && !BTicks[1].n) IgnoreKey = 0;
-                    if(EncDiff) CMode = SET_TEMPERATURE;
-                    if(!IgnoreKey && BTicks[1].o && BTicks[1].o < 100 && BTicks[1].n == 0) CMode = RESET_TEMPERATURE;
+                    if(DblTicks){ //two-iron adapter: waiting to see if a second press follows
+                        DblTicks--;
+                        if(!BTicks[1].o && BTicks[1].n){ //second press: switch iron
+                            DblTicks = 0;
+                            IgnoreKey = 1;
+                            SwitchIron();
+                        }
+                        else if(!DblTicks){ //no second press: it was a normal short press
+                            CMode = RESET_TEMPERATURE;
+                        }
+                    }
+                    if(EncDiff){
+                        DblTicks = 0;
+                        CMode = SET_TEMPERATURE;
+                    }
+                    if(!IgnoreKey && BTicks[1].o && BTicks[1].o < 100 && BTicks[1].n == 0){
+                        if(IronPairActive()){
+                            DblTicks = DBL_PRESS_TICKS; //decide after the double-press window
+                        }
+                        else{
+                            CMode = RESET_TEMPERATURE;  //single iron: exactly as before
+                        }
+                    }
                     if(CMode != DEFAULT_MENU){
                         LPArmed = 0;
                         DoExit = 0;
@@ -320,7 +358,7 @@ void OLEDTasks(int powerLost){
                                 case 17: //Instrument info
                                     CMode=INSTRUMENT_INFO;
                                     break;
-                                case 20: //Version info
+                                case 22: //Version info
                                     CMode=VERSION_INFO;
                                     break;
                                 default:

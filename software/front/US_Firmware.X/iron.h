@@ -52,6 +52,17 @@ typedef struct __PACKED {
     const t_SensorConfig * ColdJunctionSensorConfig;
 } t_IronPars;
 
+/* Switchable two-iron adapter: two separate instruments on one connector,
+ * iron 1 on heater channel 1 (Vout1, SENSEA), iron 2 on heater channel 2
+ * (Vout2, SENSEB). Only the active iron is loaded into IronPars (as a normal
+ * single iron), so it is the only one heated, at full power. */
+typedef struct __PACKED {
+    UINT16_VAL ID;
+    char Name[2][24];               //shown in the header for iron 1 / iron 2
+    t_IronConfig Config[2];         //config for iron 1 / iron 2
+    const t_SensorConfig * ColdJunctionSensorConfig;
+} t_IronPair;
+
 /* Iron temperature sensor types definition */
 #define SENSOR_UNDEFINED  0
 #define SENSOR_TC         1
@@ -68,6 +79,8 @@ IRON_H_EXTERN UINT16 IronID;
 IRON_H_EXTERN volatile t_IronPars IronPars;
 IRON_H_EXTERN void IronInit();
 IRON_H_EXTERN void IronTasks();
+IRON_H_EXTERN int IronPairActive(void);     //nonzero when a two-iron adapter is connected
+IRON_H_EXTERN void IronPairReload(void);    //load the iron selected by pars.ActIron
 
 #undef IRON_H_EXTERN
 

@@ -34,8 +34,10 @@ typedef union {
         UINT8 Debug;
         UINT8 TempStep;                             //temperature step - 1=2C, 2=4C... 25=50C
         UINT8 DispStep;                             //displayed temperature resolution (1-5 degrees C/F)
+        UINT8 ActIron;                              //two-iron adapter: active iron (0 - iron 1, 1 - iron 2)
+        UINT8 TTempAlt;                             //two-iron adapter: set temperature of the other iron
     };
-    UINT8 b[20];
+    UINT8 b[22];
 }pars_t;
 
 typedef struct {
@@ -49,11 +51,13 @@ typedef struct {
     void (*OLEDDispFunc)(int, int, int, int);
 }t_ParDef;
 
+#define FIRST_CUSTOM_PAR   19   //settings from here on were added after the original firmware
+
 #define NB_OF_MENU_PARAMS  (sizeof(MenuOrder) / sizeof(MenuOrder[0])
 
 #ifndef _PARS_C
 extern const char MenuOrder[20];
-extern const t_ParDef ParDef[21];
+extern const t_ParDef ParDef[23];
 extern void LoadPars(void);
 extern void SavePars();
 #endif

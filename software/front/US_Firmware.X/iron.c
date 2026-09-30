@@ -888,6 +888,127 @@ const t_IronPars Irons[] = {
 	}
 };
 
+/* Two-iron adapters. ID code 0x1705 = 150 ohm between ID and Vout1-,
+ * 3.0k between ID and Vout2- (not used by any single instrument).
+ *
+ * Iron 1, JBC C245 on channel 1, thermocouple read single-ended on SENSEA:
+ *   green (shell) -> SENSEA and EARTH, red -> Vout1-, blue -> Vout1+
+ *   Same gain/polynomial as the standard C245 profile, but this wiring is
+ *   UNTESTED: check it against a tip thermometer before normal use.
+ * Iron 2, JBC C210 on channel 2, wired like the second tip of the JBC tweezers:
+ *   red -> Vout2+ and SENSEB, blue -> Vout2-, green (shell) -> EARTH
+ */
+const t_IronPair IronPairs[] = {
+	{
+		{0x1705},
+		{
+			"[1] JBC C245 (UNCAL)    ",
+			"[2] JBC C210            "
+		},
+		{
+			{ //iron 1: JBC C245 on channel 1
+				{
+					{
+						SENSOR_TC,              //Type
+						0,                      //HChannel
+						1,                      //InputP (SENSEA)
+						0,                      //InputN (GND)
+						0,                      //InputInv
+						1,                      //CBandA
+						1,                      //CBandB
+					},
+					10,                         //CurrentA
+					0,                          //CurrentB
+					87,                         //Gain
+					0,                          //Offset
+					{                           //TPoly
+						0,                      //c0
+						42.85,                  //c1
+						0,                      //c2
+						0,                      //c3
+						0,                      //c4
+						0,                      //c5
+						0,                      //c6
+						0,                      //c7
+						0,                      //c8
+						0                       //c9
+					},
+				},
+				0,                          //HRCompCurrent
+				1,                          //WSLength
+				11,                         //PID_DGain
+				(UINT16)(0.3 * 32768),      //PID_KP
+				(UINT16)(0.003 * 32768),    //PID_KI
+				10,                         //PID_OVSGain
+				130,                        //PID_PMax
+				130                         //PID_PNom
+			},
+			{ //iron 2: JBC C210 on channel 2
+				{
+					{
+						SENSOR_TC,              //Type
+						1,                      //HChannel
+						0,                      //InputP (GND)
+						1,                      //InputN (SENSEB)
+						0,                      //InputInv
+						1,                      //CBandA
+						1,                      //CBandB
+					},
+					0,                          //CurrentA
+					10,                         //CurrentB
+					202,                        //Gain
+					0,                          //Offset
+					{                           //TPoly
+						0,                      //c0
+						126,                    //c1
+						0,                      //c2
+						0,                      //c3
+						0,                      //c4
+						0,                      //c5
+						0,                      //c6
+						0,                      //c7
+						0,                      //c8
+						0                       //c9
+					},
+				},
+				10,                         //HRCompCurrent
+				-1,                         //WSLength
+				1,                          //PID_DGain
+				(UINT16)(0.25 * 32768),     //PID_KP
+				(UINT16)(0.003 * 32768),    //PID_KI
+				4,                          //PID_OVSGain
+				40,                         //PID_PMax
+				40                          //PID_PNom
+			}
+		},
+		NULL
+	},
+};
+
+static const t_IronPair * CurPair;          //connected two-iron adapter, or NULL
+static volatile UINT8 PairReloadReq;        //set by the menu, done in IronTasks
+
+//Put the selected iron of the current adapter into IronPars as a single iron.
+static void IronPairLoad(void) {
+	t_IronPars p = NoIronPars;
+	int n = pars.ActIron ? 1 : 0;
+	int i;
+
+	p.ID = CurPair->ID;
+	for (i = 0; i < sizeof(p.Name); i++) p.Name[i] = CurPair->Name[n][i];
+	p.Config[0] = CurPair->Config[n];
+	p.ColdJunctionSensorConfig = CurPair->ColdJunctionSensorConfig;
+	IronPars = p;
+}
+
+int IronPairActive(void) {
+	return CurPair != NULL;
+}
+
+void IronPairReload(void) {
+	PairReloadReq = 1;
+}
+
 volatile int IronTicks;
 
 void IronIdentify() {
@@ -950,11 +1071,24 @@ void IronIdentify() {
 				PIDVars[i].HV = 0;
 				PIDVars[i].OffDelay = 1600;
 			}
+			int found = 0;
+			CurPair = NULL;
 			for (i = (sizeof(Irons) / sizeof(Irons[0])); i--; ) {
 				if (Irons[i].ID.Val == NewIronID.Val) {
 					IronPars = Irons[i];
 					for (i = 2; i--; )PIDVars[i].HR = 8;
+					found = 1;
 					break;
+				}
+			}
+			if (!found) { //not a single instrument - try the two-iron adapters
+				for (i = (sizeof(IronPairs) / sizeof(IronPairs[0])); i--; ) {
+					if (IronPairs[i].ID.Val == NewIronID.Val) {
+						CurPair = &IronPairs[i];
+						IronPairLoad();
+						for (i = 2; i--; )PIDVars[i].HR = 8;
+						break;
+					}
 				}
 			}
 			PIDInit();
@@ -962,6 +1096,7 @@ void IronIdentify() {
 	}
 	else {
 		if (IronID != 0x1919)IronPars = NoIronPars;
+		CurPair = NULL;
 		for (i = 2; i--; ) {
 			PIDVars[i].HInitData = 1;
 			PIDVars[i].HP = 0;
@@ -985,6 +1120,25 @@ void IronInit() {
 
 void IronTasks() {
 	int i;
+	if (PairReloadReq) { //switch to the other iron of a two-iron adapter
+		PairReloadReq = 0;
+		if (CurPair) {
+			ISRStop();
+			IronPairLoad();
+			for (i = 2; i--; ) {
+				PIDVars[i].HR = 8;
+				PIDVars[i].HNewData = 0;
+				PIDVars[i].HInitData = 1;
+				PIDVars[i].HP = 0;
+				PIDVars[i].HPMax = 0;
+				PIDVars[i].HI = 0;
+				PIDVars[i].HV = 0;
+				PIDVars[i].OffDelay = 1600;
+			}
+			PIDInit();
+			ISRStart();
+		}
+	}
 	if (IronTicks != ISRTicks) {
 		IronTicks = ISRTicks;
 		if (!mainFlags.Calibration && (IronTicks & 15) == 15) {
