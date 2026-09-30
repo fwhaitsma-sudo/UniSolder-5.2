@@ -39,6 +39,10 @@ static UINT8 OldNAP;
 static int NapTicks;
 static int TipChangeTicks;
 static UINT8 FNAP;
+static UINT8 ManualSleep;   //sleep entered by holding the encoder button for 5 s
+static UINT8 SleepNAP;      //holder state while in manual sleep (to wake on lift)
+static UINT8 LPArmed;       //button held past 2 s: release opens menu, 5 s sleeps
+static UINT8 IgnoreKey;     //ignore the rest of a press that woke from manual sleep
 
 static union {
     UINT32 DW;
@@ -57,6 +61,7 @@ static union {
         int Debug:1;
         int Input:1;
         int Version:1;
+        int Sleep:1;
     }f;
 }OLEDFlags;
 
@@ -129,6 +134,10 @@ void MenuInit(){
     ModeTicks = 20;
     FNAP = 1;
     OldNAP = 1;
+    ManualSleep = 0;
+    SleepNAP = 1;
+    LPArmed = 0;
+    IgnoreKey = 0;
     NapTicks = pars.NapFilterTicks + 1;
     TipChangeTicks = 0;
     CalCh = 0;
@@ -158,17 +167,41 @@ void OLEDTasks(int powerLost){
                         DoExit = 0;
                         break;
                     }
+                    if(ManualSleep){ //wake from manual sleep; the waking action itself is not used
+                        if(EncDiff || (!BTicks[1].o && BTicks[1].n) || (FNAP && !SleepNAP)){
+                            if(BTicks[1].n) IgnoreKey = 1;
+                            EncDiff = 0;
+                            ManualSleep = 0;
+                            BeepTicks = 2;
+                        }
+                        SleepNAP = FNAP;
+                    }
+                    if(IgnoreKey && !BTicks[1].o && !BTicks[1].n) IgnoreKey = 0;
                     if(EncDiff) CMode = SET_TEMPERATURE;
-                    if(BTicks[1].o && BTicks[1].o < 100 && BTicks[1].n == 0) CMode = RESET_TEMPERATURE;
+                    if(!IgnoreKey && BTicks[1].o && BTicks[1].o < 100 && BTicks[1].n == 0) CMode = RESET_TEMPERATURE;
                     if(CMode != DEFAULT_MENU){
+                        LPArmed = 0;
                         DoExit = 0;
                         break;
                     }
-                    if(BTicks[1].o <= 100 && BTicks[1].n > 100){ //goto set parameters menu
-                        CMode=MENU;
-                        ModeTicks=250;
-                        BeepTicks=2;
+                    if(!IgnoreKey){
+                        if(BTicks[1].o <= 100 && BTicks[1].n > 100){ //2 s: beep, release now opens the menu
+                            LPArmed = 1;
+                            BeepTicks = 2;
+                        }
+                        if(LPArmed && BTicks[1].o <= 250 && BTicks[1].n > 250){ //5 s: manual sleep
+                            LPArmed = 0;
+                            ManualSleep = 1;
+                            SleepNAP = FNAP;
+                            BeepTicks = 12;
+                        }
+                        if(LPArmed && BTicks[1].o && !BTicks[1].n){ //released between 2 and 5 s: menu
+                            LPArmed = 0;
+                            CMode = MENU;
+                            ModeTicks = 250;
+                        }
                     }
+                    if(ManualSleep) OLEDFlags.f.Sleep = 1;
                     OLEDFlags.f.Header = 1;
                     OLEDFlags.f.Footer = 1;
                     
@@ -192,7 +225,7 @@ void OLEDTasks(int powerLost){
                     }
                     else{
                         OLEDFlags.f.BigTemp = 1;
-                        OLEDFlags.f.Holder = !FNAP;
+                        OLEDFlags.f.Holder = !FNAP && !ManualSleep;
                         if((LISRTicks & 15) == 1){
                             OLEDTemp = DispTemp >> 3;
                             UpdateShownMeasured();
@@ -388,6 +421,7 @@ void OLEDTasks(int powerLost){
                     if(((pars.WakeUp & 1) && BTicks[1].o <= 50 && BTicks[1].n > 50) ||
                        ((pars.WakeUp & 2) && mainFlags.HolderPresent && FNAP && OldNAP != FNAP)){ //exit from stand-by
                         CTTemp = TTemp;
+                        ManualSleep = 0;
                         CTicks = 0;
                         CSeconds = 0;
                         CMSeconds = 0;
@@ -418,6 +452,11 @@ void OLEDTasks(int powerLost){
         OLEDPrintXY88(1, 21, "H", 1);
         OLEDPrintXY88(1, 29, "L", 1);
         OLEDPrintXY88(1, 37, "D", 1);    }
+
+    if(OLEDFlags.f.Sleep){
+        OLEDPrintXY88(1, 21, "S", 1);
+        OLEDPrintXY88(1, 29, "L", 1);
+        OLEDPrintXY88(1, 37, "P", 1);    }
 
     if(OLEDFlags.f.TReset){
         OLEDPrintXY88(1, 26, "T", 1);
@@ -780,6 +819,7 @@ void MenuTasks(int powerLost){
                             if(CMinutes >= pars.SlTime) i = pars.SlTemp;                            
                         }
                     }
+                    if(ManualSleep && (i > pars.SlTemp)) i = pars.SlTemp;
                     if(pars.STBTime && (CMinutes >= pars.STBTime)) i = 0;
                     CTTemp = i;
 
