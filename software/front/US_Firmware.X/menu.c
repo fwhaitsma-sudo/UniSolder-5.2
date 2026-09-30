@@ -61,6 +61,36 @@ static union {
 }OLEDFlags;
 
 int OLEDTemp;
+int OLEDShown;      //the number actually drawn on the big display (C or F)
+
+//Converts a temperature in 0.5C units to the displayed number, exactly as the
+//original firmware did.
+static int TempToShown(int t){
+    return pars.Deg ? ((t * 461) >> 9) + 32 : t >> 1;
+}
+
+//Measured temperature with the DISP.STEP setting applied.
+//DispStep = 1 keeps the original behaviour. For 2..5 the display only shows
+//multiples of the step, and only moves when the reading is clearly closer to
+//another multiple (half a step plus half a degree of hysteresis), so it does
+//not flicker when the reading sits on a boundary.
+static void UpdateShownMeasured(void){
+    int s = pars.DispStep;
+    int m16, diff;
+
+    if(s <= 1){
+        OLEDShown = TempToShown(OLEDTemp);
+        return;
+    }
+    m16 = DispTemp;                                 //1/16 C
+    if(pars.Deg) m16 = ((m16 * 9) / 5) + (32 << 4); //1/16 F
+    if(m16 < 0) m16 = 0;
+    diff = m16 - (OLEDShown << 4);
+    if(diff < 0) diff = -diff;
+    if(diff >= (s << 3) + 8){
+        OLEDShown = ((m16 + (s << 3)) / (s << 4)) * s; //nearest multiple of s
+    }
+}
 int OLEDPower;
 const char * OLEDMsg1;
 const char * OLEDMsg2;
@@ -165,6 +195,7 @@ void OLEDTasks(int powerLost){
                         OLEDFlags.f.Holder = !FNAP;
                         if((LISRTicks & 15) == 1){
                             OLEDTemp = DispTemp >> 3;
+                            UpdateShownMeasured();
                         }
                     }                    
                     break;
@@ -193,6 +224,7 @@ void OLEDTasks(int powerLost){
                     OLEDFlags.f.BigTemp = 1;
                     OLEDFlags.f.Set = 1;
                     OLEDTemp = TTemp << 2;
+                    OLEDShown = TempToShown(OLEDTemp);
                     break;
                 case RESET_TEMPERATURE: //reset temperature mode
                     if(BTicks[1].n > 100)CMode = DEFAULT_MENU;
@@ -227,6 +259,7 @@ void OLEDTasks(int powerLost){
                     OLEDFlags.f.BigTemp = 1;
                     OLEDFlags.f.TReset = 1;
                     OLEDTemp = TTemp << 2;
+                    OLEDShown = TempToShown(OLEDTemp);
                     break;
                 case MENU: //menu mode
                     if((BTicks[1].o <= 250) && (BTicks[1].n > 250)){
@@ -254,7 +287,7 @@ void OLEDTasks(int powerLost){
                                 case 17: //Instrument info
                                     CMode=INSTRUMENT_INFO;
                                     break;
-                                case 19: //Version info
+                                case 20: //Version info
                                     CMode=VERSION_INFO;
                                     break;
                                 default:
@@ -372,7 +405,7 @@ void OLEDTasks(int powerLost){
     OLEDFill(0, 128,0 ,8 ,0);
 
     if(OLEDFlags.f.BigTemp){
-        OLEDPrintNum3248(12, 1, pars.Deg ? ((OLEDTemp * 461) >> 9) + 32 : OLEDTemp >> 1);
+        OLEDPrintNum3248(12, 1, OLEDShown);
         OLEDPrintCF1648(108, 1, pars.Deg ? 1 : 0);
     }
 

@@ -11,6 +11,7 @@ void ParDispNum(int par, int col, int row, int num);
 void ParDispNumOff(int par, int col, int row, int num);
 void ParDispTemp(int par, int col, int row, int temp);
 void ParDispCF(int par, int col, int row, int num);
+void ParDispDeg(int par, int col, int row, int num);
 
 const char * StrDispRot[]   = {"0   ", "180 "};
 const char * StrResume[]    = {"OFF ", "KEY ", "HOLD", "BOTH"};
@@ -18,7 +19,7 @@ const char * StrButtons[]   = {"+/- ", "-/+ "};
 const char * StrOffOnAuto[] = {"OFF ", "ON  ", "AUTO"};
 const char * StrMenuUp[]    = {"KEY+", "KEY-"};
 
-const unsigned char MenuOrder[] = {18,0,1,2,3,4,5,6,7,11,13,8,10,14,9,12,16,17,19};
+const unsigned char MenuOrder[] = {18,19,0,1,2,3,4,5,6,7,11,13,8,10,14,9,12,16,17,20};
 
 const t_ParDef ParDef[] = {
 //  NAME            DEF  MIN      MAX      IMMEDIATE SUFFIX STRINGS       DISPFUNC    
@@ -42,7 +43,8 @@ const t_ParDef ParDef[] = {
     {" CALIBRATE ",   0,       0,       0, 0,            0, 0,            0}, //16
     {" INST.INFO ",   0,       0,       0, 0,            0, 0,            0}, //17
     {" TEMP.STEP ",   1,       1,      25, 0,            0, 0,            &ParDispTemp}, //18
-    {"   VERSION ",   0,       0,       0, 0,            0, 0,            0}, //19
+    {" DISP.STEP ",   1,       1,       5, 0,            0, 0,            &ParDispDeg}, //19
+    {"   VERSION ",   0,       0,       0, 0,            0, 0,            0}, //20
 };
 
 void ParDispStr(int par, int col, int row, int num){
@@ -68,6 +70,12 @@ void ParDispCF(int par, int col, int row, int num){
     OLEDPrint816(col + 4, row, num ? "F" : "C", 0);
 }
 
+// Plain number of degrees followed by the degree sign and C/F (used for DISP.STEP)
+void ParDispDeg(int par, int col, int row, int num){
+    ParDispNum(par, col, row, num);
+    ParDispCF(par, col + 24, row, pars.Deg);
+}
+
 void ParDispTemp(int par, int col, int row, int temp){
     if(pars.Deg){
         ParDispNum(par, col, row, ((temp * 461) >> 7) + 32);
@@ -84,6 +92,12 @@ void LoadPars(void)
     UINT8 b,oldb;
 
     EEPRead(0, (UINT8 *)&pars, sizeof(pars));
+    // DispStep was added after the original firmware. On a station that has
+    // never stored it, the EEPROM byte holds junk (usually 0xFF). Fix only
+    // this one setting here, so the check below does not reset ALL settings.
+    if((pars.DispStep < ParDef[19].Min) || (pars.DispStep > ParDef[19].Max)){
+        pars.DispStep = ParDef[19].Default;
+    }
     for(i = 0; i < sizeof(pars.b); i++){
         if((pars.b[i] < ParDef[i].Min) || (pars.b[i] > ParDef[i].Max)){
             for(i = 0; i < sizeof(pars.b); i++){
