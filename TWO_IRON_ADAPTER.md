@@ -59,12 +59,33 @@ The Windows UniSolder application can adjust gain and PID of the active iron
 live over USB for testing; those changes are lost when switching iron or
 power-cycling, so copy the final values into `iron.c`.
 
-## Not done yet: automatic switching by lifting an iron
+## Automatic switching by lifting an iron (5.2C boards)
 
-Planned, depends on the board:
+On a UniSolder 5.2C (VERSION screen shows board `1`) the station can see which
+iron you lift, using two stands on the single HOLDER input:
 
-- **UniSolder 5.2** (VERSION screen shows board `0`): the holder input is
-  on/off only, so it cannot tell which of two stands was used.
-- **UniSolder 5.2C** (board `1`): the holder input is analogue. Two stand
-  contacts with different resistors can be told apart; the resistor values
-  still need to be worked out from the schematic.
+| Stand | Switch closed while the iron rests | Wire between |
+|---|---|---|
+| C245 stand (iron 1) | series resistor **3.3k** | SLEEP and GND of the HOLDER connector |
+| C210 stand (iron 2) | series resistor **5.6k** | SLEEP and GND of the HOLDER connector |
+
+Both stand circuits go in parallel on the same two HOLDER pins. With the
+board's 3k pull-up the station reads about 418 (both resting), 536 (only C245
+resting), 666 (only C210 resting) or 1023 (both lifted); 5% resistors are fine.
+The raw value is shown on the INST.INFO screen, handy for checking the wiring.
+
+**Use a separate switch in each stand** (microswitch, or reed switch with a
+magnet), not the tip touching a metal stand. The C245 shell is now a sensor
+input, so an electrical contact through the tip would upset its temperature
+reading.
+
+Behaviour:
+- Lift one iron: it becomes the active one and heats. Put it back: it goes to
+  HOLDER T / sleep as usual.
+- Both lifted: the active iron stays active. Double-press still switches
+  manually; it stays in effect until the next time an iron is lifted.
+- Setting HOLDER to OFF disables automatic switching.
+- With the two-iron adapter on a 5.2C board, tip-changer detection is not
+  used (its signal levels are taken by the second stand).
+- On a 5.2 board (board `0`) the holder input is on/off only, so switching is
+  manual (double-press) and the holder works as before.

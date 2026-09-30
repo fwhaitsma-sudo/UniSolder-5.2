@@ -717,6 +717,56 @@ void OLEDTasks(int powerLost){
     OLEDUpdate();
 }
 
+/* Two-iron adapter on a 5.2C board: automatic iron selection from two stands.
+ * Each stand has a switch that is closed while its iron rests in it, wired
+ * between the HOLDER input (SLEEP) and GND through its own resistor:
+ *   iron 1 (C245) stand: 3.3k      iron 2 (C210) stand: 5.6k
+ * With the 3k pull-up this gives about (of 1023):
+ *   both resting 418, only iron 1 resting 536, only iron 2 resting 666,
+ *   both lifted 1023. The thresholds below sit halfway between those. */
+#define PAIR_TH_BOTH   477      //below: both irons resting
+#define PAIR_TH_IRON1  601      //below: only iron 1 resting
+#define PAIR_TH_IRON2  845      //below: only iron 2 resting; above: both lifted
+#define PAIR_DEBOUNCE   10      //stable ticks (0.2 s) before a stand change counts
+
+static UINT8 PairStand = 0xFF;  //debounced stands: bit0 iron 1 resting, bit1 iron 2 resting
+static UINT8 PairStandNew;
+static UINT8 PairStandCnt;
+
+static void PairHolderTasks(void){
+    UINT8 s, active;
+
+    if(Holder < PAIR_TH_BOTH) s = 3;
+    else if(Holder < PAIR_TH_IRON1) s = 1;
+    else if(Holder < PAIR_TH_IRON2) s = 2;
+    else s = 0;
+
+    if(s != PairStandNew){
+        PairStandNew = s;
+        PairStandCnt = 0;
+    }
+    else if(PairStandCnt < PAIR_DEBOUNCE){
+        PairStandCnt++;
+    }
+    if(PairStandCnt >= PAIR_DEBOUNCE && PairStand != s){
+        PairStand = s;
+        //exactly one iron lifted: make it the active one (only on a change,
+        //so a manual double-press stays in effect until the next lift)
+        if(pars.Holder && !mainFlags.Calibration){
+            if(s == 1 && pars.ActIron != 1) SwitchIron(); //iron 2 lifted
+            if(s == 2 && pars.ActIron != 0) SwitchIron(); //iron 1 lifted
+        }
+    }
+    if(PairStand == 0xFF) return;   //not settled yet after power-up
+
+    mainFlags.TipChange = 0;
+    TipChangeTicks = 0;
+    NapTicks = 0;
+    if(PairStand) mainFlags.HolderPresent = 1;
+    active = pars.ActIron ? 2 : 1;
+    FNAP = (PairStand & active) ? 0 : 1; //0 = active iron in its stand
+}
+
 void MenuTasks(int powerLost){
     int i;
     if(powerLost){ 
@@ -784,7 +834,11 @@ void MenuTasks(int powerLost){
                     CMode = DEFAULT_MENU;
                 }
                 
-                if(CMode == TIP_CHANGE && IronPars.Config[0].SensorConfig.Type != SENSOR_NONE){
+                if(!IronPairActive()) PairStand = 0xFF; //start fresh when an adapter is plugged in
+                if(IronPairActive() && BoardVersion == BOARD_HW_5_2C){
+                    PairHolderTasks(); //two stands on one holder input (see above)
+                }
+                else if(CMode == TIP_CHANGE && IronPars.Config[0].SensorConfig.Type != SENSOR_NONE){
                     mainFlags.TipChange = Holder > 375 && Holder <= 750;
                     NapTicks = 0;
                     FNAP = 0;
