@@ -1,4 +1,4 @@
-# Build the software/PC dotnet applications
+# Build the software/PC Windows application (UniSolder.exe)
 
 name: Windows Unisolder application
 
@@ -12,13 +12,14 @@ jobs:
     - uses: actions/checkout@v4
     - name: Add msbuild to PATH
       uses: microsoft/setup-msbuild@v2
-    # Build the application
+    # Build the whole solution in Release (includes SSComm and SSControl)
     - name: Build with MSBuild
       working-directory: software/PC
-      run: msbuild /p:Configuration=Release /p:Platform="Any CPU" /p:OutputPath=bin/Release /p:DeployOnBuild=true /p:PublishProfile=Properties\PublishProfiles\UnisolderApp.pubxml /p:PublishDir=bin/Release /p:WebPublishMethod=FileSystem /p:DeleteExistingFiles=True /p:publishUrl=bin/Release /p:VisualStudioVersion=16.0 /p:DeployDefaultTarget=WebPublish
-    # Archive the build
+      run: msbuild UniSolder.sln /p:Configuration=Release /p:Platform="Any CPU" /t:Rebuild
+    # Archive the built application (UniSolder.exe and its DLLs)
     - name: Archive build
       uses: actions/upload-artifact@v4
       with:
         name: Unisolder-WindowsApp
         path: software/PC/UniSolder/bin/Release
+        if-no-files-found: error
