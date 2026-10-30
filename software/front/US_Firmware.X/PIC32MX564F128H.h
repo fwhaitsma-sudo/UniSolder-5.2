@@ -112,6 +112,13 @@ P32_EXTERN unsigned int mcuSqrt(unsigned int);
 
 #define mcuReset() Reset();
 
+//Watchdog: FWDTEN is OFF in the config bits (bootloader must not be reset while idle in USB mode),
+//the firmware enables it at runtime. Timeout is set by WDTPS in the bootloader config bits (~2s).
+//WDTCON.ON is cleared by any reset, so the bootloader always starts with the watchdog off.
+#define mcuWDTEnable() WDTCONSET = _WDTCON_ON_MASK
+#define mcuWDTClear() WDTCONSET = _WDTCON_WDTCLR_MASK
+P32_EXTERN volatile int mcuWDTResetOccurred; //set by mcuInit1() if the last reset was caused by the watchdog
+
 P32_EXTERN void mcuInit1();
 P32_EXTERN void mcuInit2();
 P32_EXTERN void mcuInit3();

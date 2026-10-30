@@ -173,17 +173,23 @@ int main(void){
     OLEDPrintNum68(0, 0, 2, 48);
     OLEDUpdate();
     
-    BeepTicks = 2;
+    BeepTicks = mcuWDTResetOccurred ? 20 : 2; //long beep after a watchdog reset
 
     OLEDFill(0, 12, 0, 1, 0);
     OLEDUpdate();
     _delay_ms(1000);
 
+    mcuWDTClear();
+    mcuWDTEnable();
+
     while(1){
+        mcuWDTClear();
         if(mainFlags.PowerLost){
             SavePars();
+            mcuWDTClear();
             OLED_VCC = 0; //Turn on OLED's power
             MenuTasks(1);
+            mcuWDTClear();
             _delay_ms(1000);
             mcuReset();
             while(1);

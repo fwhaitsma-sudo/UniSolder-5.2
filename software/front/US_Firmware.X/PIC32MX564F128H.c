@@ -68,8 +68,12 @@ void GetBoardVersion(){
 }
 
 
+volatile int mcuWDTResetOccurred = 0;
+
 void mcuInit1(){
     INTDisableInterrupts();
+    mcuWDTResetOccurred = RCONbits.WDTO;
+    RCONCLR = _RCON_WDTO_MASK;
     OpenCoreTimer(0xFFFFFFFF);
     SYSTEMConfigWaitStates(80000000);
     
@@ -388,6 +392,16 @@ int mcuReadTime_us(){ //returns time in us from last call
     dw = _MRT_LastCoreTimer - dw;
     dw /= (CORETIMER_FREQ/1000000);
     return dw;
+}
+
+//Overrides the XC32 default handler (an endless loop that would leave the heater in its last state).
+//Called on CPU exceptions (address error, bus error, reserved instruction, trap...).
+void _general_exception_handler(void)
+{
+    HEATER = 0;
+    SPKOFF;
+    SoftReset();
+    while(1);
 }
 
 static UINT32 H2LTime = 0;
