@@ -36,7 +36,7 @@ typedef union {
         UINT8 DispStep;                             //displayed temperature resolution (1-5 degrees C/F)
         UINT8 ActIron;                              //two-iron adapter: active iron (0 - iron 1, 1 - iron 2)
         UINT8 TTempAlt;                             //two-iron adapter: set temperature of the other iron
-        UINT8 BoostTime;                            //boost: seconds at boost temperature after holding the knob and turning it (0 - off)
+        UINT8 BoostTime;                            //boost: seconds at boost temperature when double-clicking (0 - off)
         UINT8 BoostTemp;                            //boost temperature (same units as the presets)
     };
     UINT8 b[24];

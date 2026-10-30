@@ -43,7 +43,7 @@ static UINT8 ManualSleep;   //sleep entered by holding the encoder button for 5 
 static UINT8 SleepNAP;      //holder state while in manual sleep (to wake on lift)
 static UINT8 LPArmed;       //button held past 2 s: release opens menu, 5 s sleeps
 static UINT8 IgnoreKey;     //ignore the rest of a press that woke from manual sleep
-static UINT8 DblTicks;      //time left to press again for a double-press (two-iron switch)
+static UINT8 DblTicks;      //time left to press again for a double-press (two-iron switch or boost)
 
 static UINT8 BoostOn;      //boost active
 static UINT8 BoostSubTicks;
@@ -212,30 +212,23 @@ void OLEDTasks(int powerLost){
                     if(IgnoreKey && !BTicks[1].o && !BTicks[1].n) IgnoreKey = 0;
                     if(DblTicks){ //two-iron adapter: waiting to see if a second press follows
                         DblTicks--;
-                        if(!BTicks[1].o && BTicks[1].n){ //second press: switch iron
+                        if(!BTicks[1].o && BTicks[1].n){ //second press: switch iron (adapter) or boost (single iron)
                             DblTicks = 0;
                             IgnoreKey = 1;
-                            SwitchIron();
+                            if(IronPairActive()) SwitchIron();
+                            else StartBoost();
                         }
                         else if(!DblTicks){ //no second press: it was a normal short press
                             CMode = RESET_TEMPERATURE;
                         }
                     }
                     if(EncDiff){
-                        if(pars.BoostTime && BTicks[1].n && BTicks[1].n <= 100){
-                            //knob held (under 2 s) and turned: boost, the turn does not change the set temperature
-                            EncDiff = 0;
-                            IgnoreKey = 1;
-                            StartBoost();
-                        }
-                        else{
-                            DblTicks = 0;
-                            CMode = SET_TEMPERATURE;
-                        }
+                        DblTicks = 0;
+                        CMode = SET_TEMPERATURE;
                     }
                     if(!IgnoreKey && BTicks[1].o && BTicks[1].o < 100 && BTicks[1].n == 0){
-                        if(IronPairActive()){
-                            DblTicks = DBL_PRESS_TICKS; //two-iron adapter: decide after the double-press window
+                        if(IronPairActive() || pars.BoostTime){
+                            DblTicks = DBL_PRESS_TICKS; //decide after the double-press window
                         }
                         else{
                             CMode = RESET_TEMPERATURE;  //single iron: exactly as before
