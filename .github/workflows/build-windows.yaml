@@ -15,7 +15,7 @@ jobs:
     # Build the whole solution in Release (includes SSComm and SSControl)
     - name: Build with MSBuild
       working-directory: software/PC
-      run: msbuild UniSolder.sln /p:Configuration=Release /p:Platform="Any CPU" /t:Rebuild
+      run: msbuild UniSolder.sln /p:Configuration=Release /p:Platform="Any CPU" /p:SignManifests=false /t:Rebuild
     # Archive the built application (UniSolder.exe and its DLLs)
     - name: Archive build
       uses: actions/upload-artifact@v4
