@@ -1120,6 +1120,24 @@ void IronInit() {
 
 void IronTasks() {
 	int i;
+	if (IronTicks != ISRTicks) {
+		IronTicks = ISRTicks;
+		if (!mainFlags.Calibration && (IronTicks & 15) == 15) {
+			switch (IronID) {
+			case 0x1919:
+				IronIdentify();
+				break;
+			default:
+				for (i = 2; i--;) {
+					if (IronPars.Config[i].SensorConfig.Type && (PIDVars[i].NoSensor || PIDVars[i].NoHeater)) {
+						IronIdentify();
+						break;
+					}
+				}
+				break;
+			}
+		}
+	}
 	if (PairReloadReq) { //switch to the other iron of a two-iron adapter
 		PairReloadReq = 0;
 		if (CurPair) {
@@ -1137,24 +1155,6 @@ void IronTasks() {
 			}
 			PIDInit();
 			ISRStart();
-		}
-	}
-	if (IronTicks != ISRTicks) {
-		IronTicks = ISRTicks;
-		if (!mainFlags.Calibration && (IronTicks & 15) == 15) {
-			switch (IronID) {
-			case 0x1919:
-				IronIdentify();
-				break;
-			default:
-				for (i = 2; i--;) {
-					if (IronPars.Config[i].SensorConfig.Type && (PIDVars[i].NoSensor || PIDVars[i].NoHeater)) {
-						IronIdentify();
-						break;
-					}
-				}
-				break;
-			}
 		}
 	}
 }
