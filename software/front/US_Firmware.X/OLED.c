@@ -1,5 +1,6 @@
 #define _OLED_C
 
+#include <string.h>
 #include "main.h"
 #include "mcu.h"
 #include "font32x48numbers.h"
@@ -16,6 +17,11 @@
 #define CmdBri 0x81
 
 volatile displaysetup_t DisplaySetup = {0, 0};
+
+//Copy of what the display currently holds, row by row. Rows that have not changed are not sent again.
+static UINT8 OLEDShown[8][128];
+static UINT8 OLEDShownValid;    //0 after init: the display contents are unknown, send everything
+
 
 const unsigned char OLEDInitBuff1[]={
     0xAE,       //display control ([AE] OFF, AF ON)
@@ -60,6 +66,7 @@ preUpdate_t PreUpdateBuff = {
 };
 
 void OLEDInit(){
+    OLEDShownValid = 0;     //the display contents are unknown until the next full update
     mcuSPIClose();
     OLED_VCC = 1;   //Turn off display VCC
     OLED_VDD = 1;   //Turn off display VDD
@@ -154,6 +161,7 @@ void OLEDUpdate(){
     PreUpdateBuff.PreDisplayUpdate.Rot = pars.DispRot ? CmdRot180 : CmdRot0;
     mcuSPISendBytes((unsigned int*)&PreUpdateBuff.PreDisplayUpdate, sizeof(PreUpdateBuff.PreDisplayUpdate) );    
     for(r=0;r<=7;r++ ){
+        if(OLEDShownValid && !memcmp(OLEDShown[r], OLEDBUFF.B[r], 128)) continue;
         PreUpdateBuff.PreRowUpdate.Row = 0xB0+r;
         mcuSPIWait();       
         OLED_DC = 0;
@@ -162,15 +170,15 @@ void OLEDUpdate(){
         mcuSPIWait();
         OLED_DC = 1;    
         mcuSPISendBytes((unsigned int*)OLEDBUFF.B[r], 128 );
+        memcpy(OLEDShown[r], OLEDBUFF.B[r], 128);
     }
+    OLEDShownValid = 1;
 }
 
 void OLEDFill(int col, int colnum, int row, int rownum, UINT8 b){
     int cc;
     while(rownum--){
-        cc = colnum;
-        while(cc--)OLEDBUFF.B[row][col++] = b;
-        col -= colnum;
+        memset(&OLEDBUFF.B[row][col], b, colnum);
         row++;
     }
 }
@@ -197,10 +205,10 @@ void OLEDFillXY(int x, int dx, int y, int dy, int b){
 }
 
 void OLEDInvert(int col,int colnum, int row, int rownum){
-    int cc;
     while(rownum--){
-        for(cc = colnum; cc--; )OLEDBUFF.B[row][col++] ^= 255;
-        col -= colnum;
+        UINT8 *p = &OLEDBUFF.B[row][col];
+        int cc;
+        for(cc = colnum; cc--; ) *p++ ^= 255;
         row++;
     }
 }
