@@ -28,6 +28,11 @@ static int CMinutes=0;
 static T_MENU_MODE CMode;
 static T_MENU_MODE OldMode;
 static int CRstTemp;
+
+//reset temperature preset 0..3 (presets 1-3 are RTemp[], preset 4 is RTemp4)
+static UINT8 PresetTemp(int i){
+    return (i < 3) ? pars.RTemp[i] : pars.RTemp4;
+}
 static int CPar;
 static int CRow;
 static int CParVal;
@@ -309,18 +314,19 @@ void OLEDTasks(int powerLost){
                         ModeTicks = 75;
                         if(OldMode == CMode){
                             CRstTemp++;
-                            if(CRstTemp > 2)CRstTemp = 0;
+                            if(CRstTemp > 3)CRstTemp = 0;
                         }
-                        for(i = 0; i < 3; i++){
-                            if(pars.RTemp[CRstTemp]){
-                                if(TTemp != pars.RTemp[CRstTemp]){
-                                    TTemp = pars.RTemp[CRstTemp];
+                        for(i = 0; i < 4; i++){
+                            UINT8 t = PresetTemp(CRstTemp);
+                            if(t){
+                                if(TTemp != t){
+                                    TTemp = t;
                                     TempBeep = 1;
                                 }
                                 break;
                             }
                             CRstTemp++;
-                            if(CRstTemp > 2)CRstTemp=0;
+                            if(CRstTemp > 3)CRstTemp=0;
                         }
                         if(TTemp < MINTEMP)TTemp = MINTEMP;
                         if(TTemp > MAXTEMP)TTemp = MAXTEMP;
@@ -358,7 +364,7 @@ void OLEDTasks(int powerLost){
                                 case 17: //Instrument info
                                     CMode=INSTRUMENT_INFO;
                                     break;
-                                case 22: //Version info
+                                case 23: //Version info
                                     CMode=VERSION_INFO;
                                     break;
                                 default:
