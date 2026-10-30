@@ -43,7 +43,11 @@ static UINT8 ManualSleep;   //sleep entered by holding the encoder button for 5 
 static UINT8 SleepNAP;      //holder state while in manual sleep (to wake on lift)
 static UINT8 LPArmed;       //button held past 2 s: release opens menu, 5 s sleeps
 static UINT8 IgnoreKey;     //ignore the rest of a press that woke from manual sleep
-static UINT8 DblTicks;      //two-iron adapter: time left to press again for a double-press
+static UINT8 DblTicks;      //time left to press again for a double-press (two-iron switch or boost)
+
+static UINT8 BoostOn;      //boost active
+static UINT8 BoostSubTicks;
+static int BoostSec;       //seconds left in boost
 
 #define DBL_PRESS_TICKS 20  //0.4 s window for the second press of a double-press
 
@@ -65,6 +69,7 @@ static union {
         int Input:1;
         int Version:1;
         int Sleep:1;
+        int Boost:1;
     }f;
 }OLEDFlags;
 
@@ -142,6 +147,7 @@ void MenuInit(){
     LPArmed = 0;
     IgnoreKey = 0;
     DblTicks = 0;
+    BoostOn = 0;
     NapTicks = pars.NapFilterTicks + 1;
     TipChangeTicks = 0;
     CalCh = 0;
@@ -158,6 +164,16 @@ static void SwitchIron(void){
     IronPairReload();
     ManualSleep = 0;
     TempBeep = 1;       //beep again when the new iron reaches its temperature
+    BeepTicks = 6;
+}
+
+//Boost: heat to the boost temperature for the boost time, then back to the set temperature.
+//Only starts with the iron out of its stand and not in manual sleep.
+static void StartBoost(void){
+    if(!pars.BoostTime || FNAP || ManualSleep) return;
+    BoostOn = 1;
+    BoostSec = pars.BoostTime;
+    BoostSubTicks = 0;
     BeepTicks = 6;
 }
 
@@ -196,10 +212,11 @@ void OLEDTasks(int powerLost){
                     if(IgnoreKey && !BTicks[1].o && !BTicks[1].n) IgnoreKey = 0;
                     if(DblTicks){ //two-iron adapter: waiting to see if a second press follows
                         DblTicks--;
-                        if(!BTicks[1].o && BTicks[1].n){ //second press: switch iron
+                        if(!BTicks[1].o && BTicks[1].n){ //second press: switch iron (adapter) or boost (single iron)
                             DblTicks = 0;
                             IgnoreKey = 1;
-                            SwitchIron();
+                            if(IronPairActive()) SwitchIron();
+                            else StartBoost();
                         }
                         else if(!DblTicks){ //no second press: it was a normal short press
                             CMode = RESET_TEMPERATURE;
@@ -210,7 +227,7 @@ void OLEDTasks(int powerLost){
                         CMode = SET_TEMPERATURE;
                     }
                     if(!IgnoreKey && BTicks[1].o && BTicks[1].o < 100 && BTicks[1].n == 0){
-                        if(IronPairActive()){
+                        if(IronPairActive() || pars.BoostTime){
                             DblTicks = DBL_PRESS_TICKS; //decide after the double-press window
                         }
                         else{
@@ -240,6 +257,7 @@ void OLEDTasks(int powerLost){
                         }
                     }
                     if(ManualSleep) OLEDFlags.f.Sleep = 1;
+                    if(BoostOn) OLEDFlags.f.Boost = 1;
                     OLEDFlags.f.Header = 1;
                     OLEDFlags.f.Footer = 1;
                     
@@ -358,7 +376,7 @@ void OLEDTasks(int powerLost){
                                 case 17: //Instrument info
                                     CMode=INSTRUMENT_INFO;
                                     break;
-                                case 22: //Version info
+                                case 24: //Version info
                                     CMode=VERSION_INFO;
                                     break;
                                 default:
@@ -495,6 +513,11 @@ void OLEDTasks(int powerLost){
         OLEDPrintXY88(1, 21, "S", 1);
         OLEDPrintXY88(1, 29, "L", 1);
         OLEDPrintXY88(1, 37, "P", 1);    }
+
+    if(OLEDFlags.f.Boost){
+        OLEDPrintXY88(1, 21, "B", 1);
+        OLEDPrintXY88(1, 29, "S", 1);
+        OLEDPrintXY88(1, 37, "T", 1);    }
 
     if(OLEDFlags.f.TReset){
         OLEDPrintXY88(1, 26, "T", 1);
@@ -899,7 +922,21 @@ void MenuTasks(int powerLost){
                         CMinutes = 0;
                     }
 
+                    //boost: stop on any other action, out of the stand, or in sleep; timer runs in seconds
+                    if(BoostOn && (FNAP || ManualSleep || CMode != DEFAULT_MENU)) BoostOn = 0;
+                    if(BoostOn){
+                        if((BoostSubTicks++) >= 50){
+                            BoostSubTicks -= 50;
+                            if(BoostSec > 0) BoostSec--;
+                        }
+                        if(BoostSec <= 0){
+                            BoostOn = 0;
+                            BeepTicks = 6;
+                        }
+                    }
+
                     i = TTemp;
+                    if(BoostOn) i = pars.BoostTemp;
                     if(!FNAP){
                         if(i > pars.HTemp) i = pars.HTemp;
                     }
