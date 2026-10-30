@@ -986,7 +986,6 @@ const t_IronPair IronPairs[] = {
 };
 
 static const t_IronPair * CurPair;          //connected two-iron adapter, or NULL
-static volatile UINT8 PairReloadReq;        //set by the menu, done in IronTasks
 
 //Put the selected iron of the current adapter into IronPars as a single iron.
 static void IronPairLoad(void) {
@@ -1006,7 +1005,9 @@ int IronPairActive(void) {
 }
 
 void IronPairReload(void) {
-	PairReloadReq = 1;
+	//Forces IronIdentify to run again. The ID is already stable, so it picks the
+	//adapter's iron selected by pars.ActIron through the normal code path.
+	IronID = 0x1919;
 }
 
 volatile int IronTicks;
@@ -1136,25 +1137,6 @@ void IronTasks() {
 				}
 				break;
 			}
-		}
-	}
-	if (PairReloadReq) { //switch to the other iron of a two-iron adapter
-		PairReloadReq = 0;
-		if (CurPair) {
-			ISRStop();
-			IronPairLoad();
-			for (i = 2; i--; ) {
-				PIDVars[i].HR = 8;
-				PIDVars[i].HNewData = 0;
-				PIDVars[i].HInitData = 1;
-				PIDVars[i].HP = 0;
-				PIDVars[i].HPMax = 0;
-				PIDVars[i].HI = 0;
-				PIDVars[i].HV = 0;
-				PIDVars[i].OffDelay = 1600;
-			}
-			PIDInit();
-			ISRStart();
 		}
 	}
 }
