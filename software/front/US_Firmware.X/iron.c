@@ -1071,24 +1071,11 @@ void IronIdentify() {
 				PIDVars[i].HV = 0;
 				PIDVars[i].OffDelay = 1600;
 			}
-			int found = 0;
-			CurPair = NULL;
 			for (i = (sizeof(Irons) / sizeof(Irons[0])); i--; ) {
 				if (Irons[i].ID.Val == NewIronID.Val) {
 					IronPars = Irons[i];
 					for (i = 2; i--; )PIDVars[i].HR = 8;
-					found = 1;
 					break;
-				}
-			}
-			if (!found) { //not a single instrument - try the two-iron adapters
-				for (i = (sizeof(IronPairs) / sizeof(IronPairs[0])); i--; ) {
-					if (IronPairs[i].ID.Val == NewIronID.Val) {
-						CurPair = &IronPairs[i];
-						IronPairLoad();
-						for (i = 2; i--; )PIDVars[i].HR = 8;
-						break;
-					}
 				}
 			}
 			PIDInit();
@@ -1096,7 +1083,6 @@ void IronIdentify() {
 	}
 	else {
 		if (IronID != 0x1919)IronPars = NoIronPars;
-		CurPair = NULL;
 		for (i = 2; i--; ) {
 			PIDVars[i].HInitData = 1;
 			PIDVars[i].HP = 0;
