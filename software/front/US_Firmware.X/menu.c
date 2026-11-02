@@ -189,15 +189,6 @@ void OLEDTasks(int powerLost){
                         DoExit = 0;
                         break;
                     }
-                    if(ManualSleep){ //wake from manual sleep; the waking action itself is not used
-                        if(EncDiff || (!BTicks[1].o && BTicks[1].n) || (FNAP && !SleepNAP)){
-                            if(BTicks[1].n) IgnoreKey = 1;
-                            EncDiff = 0;
-                            ManualSleep = 0;
-                            BeepTicks = 2;
-                        }
-                        SleepNAP = FNAP;
-                    }
                     if(IgnoreKey && !BTicks[1].o && !BTicks[1].n) IgnoreKey = 0;
                     if(DblTicks){ //two-iron adapter: waiting to see if a second press follows
                         DblTicks--;
@@ -236,6 +227,8 @@ void OLEDTasks(int powerLost){
                             LPArmed = 0;
                             ManualSleep = 1;
                             SleepNAP = FNAP;
+                            CMode = STANDBY;
+                            ModeTicks = 255;
                             BeepTicks = 12;
                         }
                         if(LPArmed && BTicks[1].o && !BTicks[1].n){ //released between 2 and 5 s: menu
@@ -244,7 +237,6 @@ void OLEDTasks(int powerLost){
                             ModeTicks = 250;
                         }
                     }
-                    if(ManualSleep) OLEDFlags.f.Sleep = 1;
                     OLEDFlags.f.Header = 1;
                     OLEDFlags.f.Footer = 1;
                     
@@ -462,6 +454,18 @@ void OLEDTasks(int powerLost){
                     OLEDFlags.f.Version = 1;
                     break;
                 case STANDBY: //stand-by
+                    if(ManualSleep){ //manual sleep (5 s hold): wake on knob, button press or lifting the iron from its stand
+                        if(EncDiff || (!BTicks[1].o && BTicks[1].n) || (FNAP && !SleepNAP)){
+                            if(BTicks[1].n) IgnoreKey = 1;
+                            EncDiff = 0;
+                            ManualSleep = 0;
+                            CMode = DEFAULT_MENU;
+                            BeepTicks = 2;
+                        }
+                        SleepNAP = FNAP;
+                        OLEDFlags.f.StandBy = 1;
+                        break;
+                    }
                     if(((pars.WakeUp & 1) && BTicks[1].o <= 50 && BTicks[1].n > 50) ||
                        ((pars.WakeUp & 2) && mainFlags.HolderPresent && FNAP && OldNAP != FNAP)){ //exit from stand-by
                         CTTemp = TTemp;
