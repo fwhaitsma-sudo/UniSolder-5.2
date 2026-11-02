@@ -917,7 +917,7 @@ void MenuTasks(int powerLost){
                             if(CMinutes >= pars.SlTime) i = pars.SlTemp;                            
                         }
                     }
-                    if(ManualSleep && (i > pars.SlTemp)) i = pars.SlTemp;
+                    if(ManualSleep) i = 0; //manual sleep: heater off, the iron cools until it is lifted from the stand
                     if(pars.STBTime && (CMinutes >= pars.STBTime)) i = 0;
                     CTTemp = i;
 
