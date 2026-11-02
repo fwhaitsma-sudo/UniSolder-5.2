@@ -10,6 +10,7 @@ void ParDispStr(int par, int col, int row, int num);
 void ParDispNum(int par, int col, int row, int num);
 void ParDispNumOff(int par, int col, int row, int num);
 void ParDispTemp(int par, int col, int row, int temp);
+void ParDispPreset(int par, int col, int row, int temp);
 void ParDispCF(int par, int col, int row, int num);
 void ParDispDeg(int par, int col, int row, int num);
 
@@ -24,9 +25,9 @@ const unsigned char MenuOrder[] = {18,19,0,1,2,22,3,4,5,6,7,11,13,8,10,14,9,12,1
 const t_ParDef ParDef[] = {
 //  NAME            DEF  MIN      MAX      IMMEDIATE SUFFIX STRINGS       DISPFUNC    
 
-    {"        T1 ", 125, MINTEMP, MAXTEMP, 0,            0, 0,            &ParDispTemp}, //0
-    {"        T2 ", 150, MINTEMP, MAXTEMP, 0,            0, 0,            &ParDispTemp}, //1
-    {"        T3 ", 175, MINTEMP, MAXTEMP, 0,            0, 0,            &ParDispTemp}, //2
+    {"        T1 ", 125,       0, MAXTEMP, 0,            0, 0,            &ParDispPreset}, //0
+    {"        T2 ", 150,       0, MAXTEMP, 0,            0, 0,            &ParDispPreset}, //1
+    {"        T3 ", 175,       0, MAXTEMP, 0,            0, 0,            &ParDispPreset}, //2
     {"  HOLDER T ", 150, MINTEMP, MAXTEMP, 0,            0, 0,            &ParDispTemp}, //3
     {"   SLEEP T ", 125, MINTEMP, MAXTEMP, 0,            0, 0,            &ParDispTemp}, //4
     {"     SLEEP ",  20,       0,     255, 0,          "s", 0,            &ParDispNumOff}, //5
@@ -46,7 +47,7 @@ const t_ParDef ParDef[] = {
     {" DISP.STEP ",   1,       1,       5, 0,            0, 0,            &ParDispDeg}, //19
     {"  ACT.IRON ",   0,       0,       1, 0,            0, 0,            0}, //20 not in menu
     {"  ALT.TEMP ", 150, MINTEMP, MAXTEMP, 0,            0, 0,            0}, //21 not in menu
-    {"        T4 ", 200, MINTEMP, MAXTEMP, 0,            0, 0,            &ParDispTemp}, //22
+    {"        T4 ", 200,       0, MAXTEMP, 0,            0, 0,            &ParDispPreset}, //22
     {"   VERSION ",   0,       0,       0, 0,            0, 0,            0}, //23
 };
 
@@ -77,6 +78,16 @@ void ParDispCF(int par, int col, int row, int num){
 void ParDispDeg(int par, int col, int row, int num){
     ParDispNum(par, col, row, num);
     ParDispCF(par, col + 24, row, pars.Deg);
+}
+
+//preset: 0 means OFF (the slot is skipped when cycling the presets)
+void ParDispPreset(int par, int col, int row, int temp){
+    if(temp == 0){
+        OLEDPrint816(col, row, StrOffOnAuto[0], 0);
+    }
+    else{
+        ParDispTemp(par, col, row, temp);
+    }
 }
 
 void ParDispTemp(int par, int col, int row, int temp){

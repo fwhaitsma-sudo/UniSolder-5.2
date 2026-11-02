@@ -47,6 +47,7 @@ static UINT8 FNAP;
 static UINT8 ManualSleep;   //sleep entered by holding the encoder button for 5 s
 static UINT8 SleepNAP;      //holder state while in manual sleep (to wake on lift)
 static UINT8 LPArmed;       //button held past 2 s: release opens menu, 5 s sleeps
+#define PRESET_PAR(p) (((p) <= 2) || ((p) == 22))  //T1-T3 and T4 in the settings table
 static UINT8 IgnoreKey;     //ignore the rest of a press that woke from manual sleep
 static UINT8 DblTicks;      //two-iron adapter: time left to press again for a double-press
 
@@ -377,9 +378,12 @@ void OLEDTasks(int powerLost){
                             CMode = MENU;
                         }
                         else {
+                            int dir = EncDiff;
                             if(EncDiff > 0)CParVal++;
                             if(EncDiff < 0)CParVal--;
                             EncDiff=0;
+                            //presets: 0 is OFF, otherwise the temperature starts at MINTEMP
+                            if(PRESET_PAR(p) && CParVal > 0 && CParVal < MINTEMP) CParVal = (dir > 0) ? MINTEMP : 0;
                             if((CParVal < ParDef[p].Min))CParVal = ParDef[p].Max;
                             if((CParVal > ParDef[p].Max))CParVal = ParDef[p].Min;
                             if(ParDef[p].Immediate)pars.b[p] = CParVal;
