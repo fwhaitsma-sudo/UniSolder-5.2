@@ -1,0 +1,34 @@
+# Build the software/PC application with the .NET 10 SDK (SDK-style projects)
+
+name: Windows Unisolder application (.NET 10)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup .NET 10 SDK
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 10.0.x
+    # Restore NuGet packages and publish a self-contained single-file exe
+    # (runs on Windows x64 without installing the .NET runtime)
+    - name: Publish with dotnet
+      working-directory: software/PC
+      run: >
+        dotnet publish UniSolder/UniSolder.csproj
+        -c Release -r win-x64 --self-contained true
+        -p:PublishSingleFile=true
+        -p:IncludeNativeLibrariesForSelfExtract=true
+        -p:EnableCompressionInSingleFile=true
+        -o publish
+    # Archive the build
+    - name: Archive build
+      uses: actions/upload-artifact@v4
+      with:
+        name: Unisolder-WindowsApp-net10
+        path: software/PC/publish
+        if-no-files-found: error

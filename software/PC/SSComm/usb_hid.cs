@@ -1,19 +1,14 @@
-﻿using System;
-using System.Threading;
-using System.Diagnostics;
-using System.Runtime.InteropServices;
-using System.Windows.Forms;
+using System;
 using System.IO;
-using Microsoft.VisualBasic;
-using Microsoft.Win32.SafeHandles;
-using System.Runtime.Remoting.Messaging;
-
-using LibUsbDotNet;
-using LibUsbDotNet.Main;
+using System.Linq;
+using System.Threading;
+using HidSharp;
 
 namespace SSComm
 {
-    public partial class USBHID : IUniComm
+    //USB HID transport built on HidSharp: device enumeration, report I/O and 32/64-bit interop are handled by the library.
+    //Reports carry the report ID in byte 0 (always 0 for this device); the payload is the rest of the report.
+    public class USBHID : IUniComm
     {
         public bool Connected { get; private set; } = false;
 
@@ -31,12 +26,9 @@ namespace SSComm
 
         public event EventHandler DataReceived;
 
-        private UsbDevice MyUSBDevice;
-        private UsbDeviceFinder MyUSBDeviceFinder;
-        private IUsbDevice WholeUSBDevice;
-        private UsbEndpointWriter MyUSBWriter;
-        private UsbEndpointReader MyUSBReader;
-        private UsbSetupPacket MyUSBSetupPacket;
+        //read timeout used only so the RX thread can notice a Disconnect(), not a protocol timeout
+        private const int RXPollTimeout = 250;
+        private const int TXTimeout = 2000;
 
         private byte[] RXFIFO = new byte[RXFIFOSIZE];
         private Int32 RXReadPos;
@@ -46,167 +38,88 @@ namespace SSComm
         private Int32 TXReadPos;
         private Int32 TXWritePos;
 
-        private System.Threading.Thread bkThread;
-        private bool bkThExit;
-        private ManualResetEvent bkThInterript = new ManualResetEvent(false);
+        private Thread rxThread;
+        private Thread txThread;
+        private volatile bool thExit;
+        private ManualResetEvent txWake = new ManualResetEvent(false);
 
-        private Hid MyHid = new Hid();
-        private DeviceManagement MyDeviceManagement = new DeviceManagement();
-        private SafeFileHandle hidHandleR;
-        private SafeFileHandle hidHandleW;
-        private FileStream hidFSR;
-        private FileStream hidFSW;
-        private string myDevicePathName;
-
-        private byte[] rxBuffer;
-        private byte[] txBuffer;
+        private HidDevice hidDevice;
+        private HidStream hidStream;
+        private int inputReportLength;
+        private int outputReportLength;
 
         private object ThisLock = new Object();
 
         public bool Connect()
         {
-            string[] devicePathName = new string[128];
-            bool myDeviceDetected = false;
-
             if (Connected) Disconnect();
 
-            Guid hidGuid = Guid.Empty;
-            Hid.HidD_GetHidGuid(ref hidGuid);
-            if (MyDeviceManagement.FindDeviceFromGuid(hidGuid, ref devicePathName))
+            HidDevice device = DeviceList.Local.GetHidDevices(DevVID, DevPID)
+                .FirstOrDefault(d => (DevRevision == Int32.MaxValue || d.ReleaseNumberBcd == DevRevision)
+                                  && (string.IsNullOrEmpty(DevSerialNumber) || SerialMatches(d)));
+            if (device == null) return false;
+
+            HidStream stream;
+            if (!device.TryOpen(out stream))
             {
-                int memberIndex = 0;
-                do
-                {
-                    hidHandleR = FileIO.CreateFile(devicePathName[memberIndex], 0, FileIO.FILE_SHARE_READ | FileIO.FILE_SHARE_WRITE, IntPtr.Zero, FileIO.OPEN_EXISTING, 0, 0);
-                    if (!hidHandleR.IsInvalid)
-                    {
-                        MyHid.DeviceAttributes.Size = Marshal.SizeOf(MyHid.DeviceAttributes);
-                        if (Hid.HidD_GetAttributes(hidHandleR, ref MyHid.DeviceAttributes))
-                        {
-                            if ((MyHid.DeviceAttributes.VendorID == DevVID) && (MyHid.DeviceAttributes.ProductID == DevPID))
-                            {
-                                myDeviceDetected = true;
-                                myDevicePathName = devicePathName[memberIndex];
-                            }
-                            else
-                            {
-                                myDeviceDetected = false;
-                                hidHandleR.Close();
-                            }
-                        }
-                        else
-                        {
-                            myDeviceDetected = false;
-                            hidHandleR.Close();
-                        }
-                    }
-                    memberIndex++;
-                }
-                while (!(myDeviceDetected || memberIndex == devicePathName.Length));
-                if (myDeviceDetected)
-                {
-                    MyHid.Capabilities = MyHid.GetDeviceCapabilities(hidHandleR);
-                    MyHid.GetHidUsage(MyHid.Capabilities);
-                    hidHandleR.Close();
-                    hidHandleR = FileIO.CreateFile(myDevicePathName, FileIO.GENERIC_READ, FileIO.FILE_SHARE_READ | FileIO.FILE_SHARE_WRITE, IntPtr.Zero, FileIO.OPEN_EXISTING, 0, 0);
-                    hidHandleW = FileIO.CreateFile(myDevicePathName, FileIO.GENERIC_WRITE, FileIO.FILE_SHARE_READ | FileIO.FILE_SHARE_WRITE, IntPtr.Zero, FileIO.OPEN_EXISTING, 0, 0);
-                    if (hidHandleR.IsInvalid || hidHandleW.IsInvalid)
-                    {
-                        Connected = false;
-                        hidFSR.Close();
-                        hidFSW.Close();
-                        if (!hidHandleR.IsInvalid) hidHandleR.Close();
-                        if (!hidHandleW.IsInvalid) hidHandleW.Close();
-                    }
-                    else
-                    {
-                        MyHid.FlushQueue(hidHandleR);
-                        MyHid.FlushQueue(hidHandleW);
-                        hidFSR = new FileStream(hidHandleR, FileAccess.Read, MyHid.Capabilities.OutputReportByteLength, false); //false);
-                        hidFSW = new FileStream(hidHandleW, FileAccess.Write, MyHid.Capabilities.OutputReportByteLength, false); //false);
-                        rxBuffer = new Byte[MyHid.Capabilities.InputReportByteLength];
-                        hidFSR.BeginRead(rxBuffer, 0, rxBuffer.Length, new AsyncCallback(ReadCallback), rxBuffer);
-                        bkThread = new System.Threading.Thread(this.Th_DoWork);
-                        bkThExit = false;
-                        bkThread.Start();
-                        Connected = true;
-                    }
-                }
+                Log.Error("USB HID: device found but cannot be opened, path " + device.DevicePath);
+                return false;
             }
-            return Connected;
+            stream.ReadTimeout = RXPollTimeout;
+            stream.WriteTimeout = TXTimeout;
+
+            lock (ThisLock)
+            {
+                hidDevice = device;
+                hidStream = stream;
+                inputReportLength = device.GetMaxInputReportLength();
+                outputReportLength = device.GetMaxOutputReportLength();
+            }
+
+            thExit = false;
+            txWake.Reset();
+            rxThread = new Thread(this.Th_Read) { IsBackground = true, Name = "USB HID RX" };
+            txThread = new Thread(this.Th_Write) { IsBackground = true, Name = "USB HID TX" };
+            Connected = true;
+            rxThread.Start();
+            txThread.Start();
+            Log.Info("USB HID: connected VID=0x" + DevVID.ToString("X4") + " PID=0x" + DevPID.ToString("X4") + " in/out report " + inputReportLength + "/" + outputReportLength + " bytes, path " + device.DevicePath);
+            return true;
         }
 
-        private void ReadCallback(IAsyncResult ar)
+        private bool SerialMatches(HidDevice d)
         {
-            if (hidFSR != null)
-            {
-                try
-                {
-                    hidFSR.EndRead(ar);
-                    if (ar.IsCompleted)
-                    {
-                        lBytesReceived += rxBuffer.Length;
-                        if (RXDataCount + rxBuffer.Length < RXFIFOSIZE)
-                        {
-                            for (int i = 1; i < rxBuffer.Length; i++)
-                            {
-                                RXFIFO[RXWritePos] = rxBuffer[i];
-                                RXWritePos = (RXWritePos + 1) % RXFIFOSIZE;
-                            }
-                        }
-                        else
-                        {
-                            throw new Exception("RX FIFO overflow");
-                        }
-                        if (DataReceived != null)
-                        {
-                            DataReceived(this, new EventArgs());
-                        }
-                    }
-                    hidFSR.BeginRead(rxBuffer, 0, rxBuffer.Length, new AsyncCallback(ReadCallback), rxBuffer);
-                }
-                catch
-                {
-                    Disconnect();
-                }
-            }
+            try { return d.GetSerialNumber() == DevSerialNumber; }
+            catch (IOException) { return false; }
         }
-
 
         public void Disconnect()
         {
-            if (bkThread != null)
-            {
-                bkThExit = true;
-                bkThInterript.Set();
-                if (bkThread.ThreadState == System.Threading.ThreadState.Running) bkThread.Join();
-            }
-            bkThread = null;
+            //cleared first so the I/O threads failing on the closed stream know the disconnect is deliberate
+            bool wasConnected = Connected;
+            Connected = false;
+            if (wasConnected) Log.Info("USB HID: disconnecting, " + lBytesSent + " bytes sent, " + lBytesReceived + " received");
+            thExit = true;
+            txWake.Set();
+            JoinThread(rxThread);
+            JoinThread(txThread);
+            rxThread = null;
+            txThread = null;
             lock (ThisLock)
             {
-                if (hidFSR != null)
+                if (hidStream != null)
                 {
-                    hidFSR.Close();
-                    hidFSR = null;
+                    hidStream.Dispose();
+                    hidStream = null;
                 }
-                if (hidFSW != null)
-                {
-                    hidFSW.Close();
-                    hidFSW = null;
-                }
-                if ((hidHandleR != null) && (!(hidHandleR.IsInvalid)))
-                {
-                    hidHandleR.Close();
-                }
-                if ((hidHandleW != null) && (!(hidHandleW.IsInvalid)))
-                {
-                    hidHandleW.Close();
-                }
-                hidHandleR = null;
-                hidHandleW = null;
-                myDevicePathName = "";
+                hidDevice = null;
             }
-            Connected = false;
+        }
+
+        private static void JoinThread(Thread t)
+        {
+            //Disconnect() may be called from one of the I/O threads themselves after an error
+            if (t != null && t.IsAlive && t != Thread.CurrentThread) t.Join(1000);
         }
 
         public void Init()
@@ -216,6 +129,8 @@ namespace SSComm
             lBytesReceived = 0;
             RXReadPos = 0;
             RXWritePos = 0;
+            TXReadPos = 0;
+            TXWritePos = 0;
             DevVID = UInt16.MaxValue;
             DevPID = UInt16.MaxValue;
             DevRevision = Int32.MaxValue;
@@ -254,7 +169,7 @@ namespace SSComm
             }
             else
             {
-                throw new Exception("SSComm(USBGen_LibUSB).ReadByte: RX FIFO empty!");
+                throw new Exception("SSComm(USBHID).ReadByte: RX FIFO empty!");
             }
         }
 
@@ -296,11 +211,11 @@ namespace SSComm
             {
                 TXFIFO[TXWritePos] = wb;
                 TXWritePos = (TXWritePos + 1) % TXFIFOSIZE;
-                if (dow && (bkThread != null)) bkThInterript.Set();
+                if (dow && (txThread != null)) txWake.Set();
             }
             else
             {
-                throw new Exception("SSComm(USBGen_LibUSB).WriteByte: TX FIFO Full!");
+                throw new Exception("SSComm(USBHID).WriteByte: TX FIFO Full!");
             }
         }
 
@@ -313,81 +228,91 @@ namespace SSComm
                 TXFIFO[TXWritePos] = DBuffer[DOffset + i];
                 TXWritePos = (TXWritePos + 1) % TXFIFOSIZE;
             }
-            if (bkThread != null) bkThInterript.Set();
+            if (txThread != null) txWake.Set();
             return true;
         }
 
         public void Dispose()
         {
             Disconnect();
+            txWake.Dispose();
         }
 
-        private void MyUSBReader_DataReceived(object sender, LibUsbDotNet.Main.EndpointDataEventArgs e)
+        private void Th_Read()
         {
-            Int32 i;
-            if (e.Count > 0)
+            HidStream stream = hidStream;
+            byte[] report = new byte[inputReportLength];
+            try
             {
-                lBytesReceived += e.Count;
-                if (RXDataCount + e.Count < RXFIFOSIZE)
+                while (!thExit)
                 {
-                    for (i = 0; i < e.Count; i++)
+                    int count;
+                    try
                     {
-                        RXFIFO[RXWritePos] = e.Buffer[i];
+                        count = stream.Read(report, 0, report.Length);
+                    }
+                    catch (TimeoutException)
+                    {
+                        continue;
+                    }
+                    if (count <= 1) continue;
+                    //skip the report ID in byte 0
+                    int payload = count - 1;
+                    lBytesReceived += payload;
+                    if (RXDataCount + payload >= RXFIFOSIZE) throw new IOException("RX FIFO overflow");
+                    for (int i = 1; i < count; i++)
+                    {
+                        RXFIFO[RXWritePos] = report[i];
                         RXWritePos = (RXWritePos + 1) % RXFIFOSIZE;
                     }
+                    DataReceived?.Invoke(this, EventArgs.Empty);
                 }
-                else
+            }
+            catch (Exception ex) when (ex is IOException || ex is ObjectDisposedException)
+            {
+                //an exception after a deliberate Disconnect() (stream closed) is expected, not an error
+                if (!thExit)
                 {
-                    throw new Exception("RX FIFO overflow");
-                }
-                if (DataReceived != null)
-                {
-                    DataReceived(this, new EventArgs());
+                    Log.Error("USB HID: read failed, disconnecting (device removed?)", ex);
+                    Disconnect();
                 }
             }
         }
 
-        private void Th_DoWork()
+        private void Th_Write()
         {
-            Int32 lTXSize;
-            Int32 i;
-            byte[] b = new byte[MyHid.Capabilities.OutputReportByteLength];
+            HidStream stream = hidStream;
+            byte[] report = new byte[outputReportLength];
             try
             {
-                while (true)
+                while (!thExit)
                 {
-                    if (hidFSW != null && hidFSW.CanWrite)
+                    Int32 lTXSize = TXWritePos - TXReadPos;
+                    if (lTXSize < 0) lTXSize += TXFIFOSIZE;
+                    //the protocol only sends full reports: wait until a whole payload is queued
+                    if (lTXSize >= (report.Length - 1))
                     {
-                        lTXSize = TXWritePos - TXReadPos;
-                        if (lTXSize < 0) lTXSize += TXFIFOSIZE;
-                        if (lTXSize >= (b.Length - 1))
+                        report[0] = 0;
+                        for (int i = 0; i < (report.Length - 1); i++)
                         {
-                            b[0] = 0;
-                            for (i = 0; i < (b.Length - 1); i++)
-                            {
-                                b[i + 1] = TXFIFO[(TXReadPos + i) % TXFIFOSIZE];
-                            }
-                            hidFSW.Write(b, 0, b.Length);
-                            hidFSW.Flush();
-                            TXReadPos += b.Length - 1;
-                            TXReadPos %= TXFIFOSIZE;
-                            lBytesSent += b.Length - 1;
+                            report[i + 1] = TXFIFO[(TXReadPos + i) % TXFIFOSIZE];
                         }
-                        else
-                        {
-                            bkThInterript.WaitOne(Timeout.Infinite);
-                            bkThInterript.Reset();
-                        }
+                        stream.Write(report, 0, report.Length);
+                        TXReadPos = (TXReadPos + report.Length - 1) % TXFIFOSIZE;
+                        lBytesSent += report.Length - 1;
                     }
                     else
                     {
-                        bkThInterript.WaitOne(Timeout.Infinite);
-                        bkThInterript.Reset();
+                        txWake.WaitOne(Timeout.Infinite);
+                        txWake.Reset();
                     }
-                    if (bkThExit) break;
                 }
             }
-            catch (ThreadAbortException) { }
+            //device removed or stream closed while writing: end the thread instead of crashing the process
+            catch (Exception ex) when (ex is IOException || ex is TimeoutException || ex is ObjectDisposedException)
+            {
+                if (!thExit) Log.Error("USB HID: write failed, TX thread stopped", ex);
+            }
         }
     }
 }

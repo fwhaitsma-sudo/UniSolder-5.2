@@ -23,7 +23,7 @@
 #pragma config OSCIOFNC = OFF           // CLKO Output Signal Active on the OSCO Pin (Disabled)
 #pragma config FPBDIV = DIV_2           // Peripheral Clock Divisor (Pb_Clk is Sys_Clk/1)
 #pragma config FCKSM = CSDCMD           // Clock Switching and Monitor Selection (Clock Switch Disable, FSCM Disabled)
-#pragma config WDTPS = PS1048576        // Watchdog Timer Postscaler (1:1048576)
+#pragma config WDTPS = PS2048           // Watchdog Timer Postscaler (1:2048 -> ~2s timeout, enabled at runtime by the firmware)
 #pragma config FWDTEN = OFF             // Watchdog Timer Enable (WDT Disabled (SWDTEN Bit Controls))
 
 // DEVCFG0
@@ -68,8 +68,12 @@ void GetBoardVersion(){
 }
 
 
+volatile int mcuWDTResetOccurred = 0;
+
 void mcuInit1(){
     INTDisableInterrupts();
+    mcuWDTResetOccurred = RCONbits.WDTO;
+    RCONCLR = _RCON_WDTO_MASK;
     OpenCoreTimer(0xFFFFFFFF);
     SYSTEMConfigWaitStates(80000000);
     
@@ -388,6 +392,16 @@ int mcuReadTime_us(){ //returns time in us from last call
     dw = _MRT_LastCoreTimer - dw;
     dw /= (CORETIMER_FREQ/1000000);
     return dw;
+}
+
+//Overrides the XC32 default handler (an endless loop that would leave the heater in its last state).
+//Called on CPU exceptions (address error, bus error, reserved instruction, trap...).
+void _general_exception_handler(void)
+{
+    HEATER = 0;
+    SPKOFF;
+    SoftReset();
+    while(1);
 }
 
 static UINT32 H2LTime = 0;
