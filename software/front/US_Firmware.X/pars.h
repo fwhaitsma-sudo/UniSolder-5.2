@@ -37,8 +37,9 @@ typedef union {
         UINT8 ActIron;                              //two-iron adapter: active iron (0 - iron 1, 1 - iron 2)
         UINT8 TTempAlt;                             //two-iron adapter: set temperature of the other iron
         UINT8 RTemp4;                               //fourth reset temperature (preset 4)
+        UINT8 RTempMem[4];                          //per preset: last temperature before it was set to OFF (restored when turned on again)
     };
-    UINT8 b[23];
+    UINT8 b[27];
 }pars_t;
 
 typedef struct {
@@ -58,7 +59,7 @@ typedef struct {
 
 #ifndef _PARS_C
 extern const char MenuOrder[21];
-extern const t_ParDef ParDef[24];
+extern const t_ParDef ParDef[28];
 extern void LoadPars(void);
 extern void SavePars();
 #endif

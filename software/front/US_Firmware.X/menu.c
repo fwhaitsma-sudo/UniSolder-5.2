@@ -51,6 +51,8 @@ static UINT8 LPArmed;       //button held past 2 s: release opens menu, 5 s slee
 #define MENU_HOLD_TICKS    50   //1 s: a release after this opens the menu
 #define STANDBY_HOLD_TICKS 150  //3 s: holding past this enters standby (manual sleep)
 #define PRESET_PAR(p) (((p) <= 2) || ((p) == 22))  //T1-T3 and T4 in the settings table
+static int PresetLastOn;   //last temperature of the preset being edited (restored when OFF is turned on again)
+#define PRESET_SLOT(p) (((p) == 22) ? 3 : (p))  //index in pars.RTempMem
 static UINT8 PresetArmed;     //the first click from a temperature jumps to OFF; used up until the next confirm
 static UINT8 IgnoreKey;     //ignore the rest of a press that woke from manual sleep
 static UINT8 DblTicks;      //two-iron adapter: time left to press again for a double-press
@@ -361,7 +363,7 @@ void OLEDTasks(int powerLost){
                                 case 17: //Instrument info
                                     CMode=INSTRUMENT_INFO;
                                     break;
-                                case 23: //Version info
+                                case 27: //Version info
                                     CMode=VERSION_INFO;
                                     break;
                                 default:
@@ -369,8 +371,12 @@ void OLEDTasks(int powerLost){
                                     break;
                             }
                             if(CMode == SET_PARAMS){
-                                CParVal = pars.b[(UINT8)MenuOrder[(UINT8)CPar]];
+                                int q = MenuOrder[(UINT8)CPar];
+                                CParVal = pars.b[(UINT8)q];
                                 PresetArmed = 1;
+                                if(PRESET_PAR(q)){
+                                    PresetLastOn = CParVal ? CParVal : (pars.RTempMem[PRESET_SLOT(q)] ? pars.RTempMem[PRESET_SLOT(q)] : MINTEMP);
+                                }
                             }
                         }
                         OLEDFlags.f.Pars = 1;
@@ -381,6 +387,7 @@ void OLEDTasks(int powerLost){
                         int p = MenuOrder[CPar];
                         if(BTicks[1].n || EncDiff) ModeTicks = 250;
                         if(BTicks[1].o && (BTicks[1].n == 0)){ //confirm (release of the button)
+                            if(PRESET_PAR(p) && CParVal == 0) pars.RTempMem[PRESET_SLOT(p)] = PresetLastOn;
                             pars.b[p] = CParVal;
                             PresetArmed = 1;
                             CMode = MENU;
@@ -393,6 +400,11 @@ void OLEDTasks(int powerLost){
                                 PresetArmed = 0;
                                 EncDiff = 0;
                             }
+                            else if(PRESET_PAR(p) && CParVal == 0 && dir){
+                                //OFF turned on again: back to the last temperature of this preset
+                                CParVal = PresetLastOn;
+                                EncDiff = 0;
+                            }
                             else{
                                 if(EncDiff > 0)CParVal++;
                                 if(EncDiff < 0)CParVal--;
@@ -402,6 +414,7 @@ void OLEDTasks(int powerLost){
                                 if((CParVal < ParDef[p].Min))CParVal = ParDef[p].Max;
                                 if((CParVal > ParDef[p].Max))CParVal = ParDef[p].Min;
                             }
+                            if(PRESET_PAR(p) && CParVal != 0) PresetLastOn = CParVal;
                             if(ParDef[p].Immediate)pars.b[p] = CParVal;
                         }
                         OLEDFlags.f.Pars = 1;
