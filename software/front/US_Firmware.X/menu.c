@@ -51,8 +51,7 @@ static UINT8 LPArmed;       //button held past 2 s: release opens menu, 5 s slee
 #define MENU_HOLD_TICKS    50   //1 s: a release after this opens the menu
 #define STANDBY_HOLD_TICKS 150  //3 s: holding past this enters standby (manual sleep)
 #define PRESET_PAR(p) (((p) <= 2) || ((p) == 22))  //T1-T3 and T4 in the settings table
-static UINT8 PresetIdle;      //ticks since the knob last moved in the settings menu (saturates)
-#define TURN_IDLE_TICKS 25    //a knob movement after this much rest starts a new turn: the first click jumps
+static UINT8 PresetArmed;     //the first click from a temperature jumps to OFF; used up until the next confirm
 static UINT8 IgnoreKey;     //ignore the rest of a press that woke from manual sleep
 static UINT8 DblTicks;      //two-iron adapter: time left to press again for a double-press
 
@@ -371,7 +370,7 @@ void OLEDTasks(int powerLost){
                             }
                             if(CMode == SET_PARAMS){
                                 CParVal = pars.b[(UINT8)MenuOrder[(UINT8)CPar]];
-                                PresetIdle = 255;
+                                PresetArmed = 1;
                             }
                         }
                         OLEDFlags.f.Pars = 1;
@@ -380,19 +379,18 @@ void OLEDTasks(int powerLost){
                 case SET_PARAMS: //menu set parameter mode
                     {
                         int p = MenuOrder[CPar];
-                        int moved = EncDiff;
                         if(BTicks[1].n || EncDiff) ModeTicks = 250;
-                        if(BTicks[1].o && (BTicks[1].n == 0)){
+                        if(BTicks[1].o && (BTicks[1].n == 0)){ //confirm (release of the button)
                             pars.b[p] = CParVal;
+                            PresetArmed = 1;
                             CMode = MENU;
                         }
                         else {
                             int dir = EncDiff;
-                            if(PRESET_PAR(p) && dir && (PresetIdle >= TURN_IDLE_TICKS)){
-                                //first click of a turn: a temperature goes to OFF in one step;
-                                //from OFF it goes to the first temperature (up) or the top one (down)
-                                if(CParVal != 0) CParVal = 0;
-                                else CParVal = (dir > 0) ? MINTEMP : ParDef[p].Max;
+                            if(PresetArmed && PRESET_PAR(p) && dir && CParVal != 0){
+                                //first click from a temperature: straight to OFF, once per edit
+                                CParVal = 0;
+                                PresetArmed = 0;
                                 EncDiff = 0;
                             }
                             else{
@@ -406,8 +404,6 @@ void OLEDTasks(int powerLost){
                             }
                             if(ParDef[p].Immediate)pars.b[p] = CParVal;
                         }
-                        if(moved) PresetIdle = 0;
-                        else if(PresetIdle < 255) PresetIdle++;
                         OLEDFlags.f.Pars = 1;
                     }
                     break;
