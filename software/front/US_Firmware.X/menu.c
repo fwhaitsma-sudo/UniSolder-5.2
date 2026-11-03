@@ -936,6 +936,12 @@ void MenuTasks(int powerLost){
                         }
                     }
                     
+                    //a press that wakes the automatic sleep (SLEEP T) holds the heater off until it is released
+                    if(userInput && BTicks[1].n && pars.SlTime){
+                        if(((pars.Holder == 1) || ((pars.Holder == 2) && mainFlags.HolderPresent)) ? (CSeconds >= pars.SlTime) : (CMinutes >= pars.SlTime)){
+                            WakeHold = 1;
+                        }
+                    }
                     if(userInput || (((pars.Holder == 1) || ((pars.Holder == 2) && mainFlags.HolderPresent)) && (FNAP || CMode == TIP_CHANGE))){
                         CTicks = 0;
                         CSeconds = 0;
