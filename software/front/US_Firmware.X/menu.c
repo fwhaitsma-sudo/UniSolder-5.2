@@ -940,14 +940,15 @@ void MenuTasks(int powerLost){
                     }
                     
                     //a press that wakes the automatic sleep (SLEEP T) holds the heater off until it is released
-                    if(BTicks[1].n == 1 && pars.SlTime && TTemp > pars.SlTemp){
+                    if(CMode == DEFAULT_MENU && BTicks[1].n == 1 && pars.SlTime && TTemp > pars.SlTemp){
                         if(((pars.Holder == 1) || ((pars.Holder == 2) && mainFlags.HolderPresent)) ? (CSeconds >= pars.SlTime) : (CMinutes >= pars.SlTime)){
                             WakeHold = 1;
                         }
                     }
                     //a new press after a long press: the same rule again; the knob moving ends it
-                    if(BTicks[1].n == 1 && WakeLong){ WakeLong = 0; WakeHold = 1; }
-                    if(knobMoved) WakeLong = 0;
+                    if(CMode == DEFAULT_MENU && BTicks[1].n == 1 && WakeLong){ WakeLong = 0; WakeHold = 1; }
+                    //turning the knob in the normal screen ends the hold; in the menu it does not heat
+                    if(knobMoved && (CMode == DEFAULT_MENU || CMode == SET_TEMPERATURE)) WakeLong = 0;
                     if(userInput || (((pars.Holder == 1) || ((pars.Holder == 2) && mainFlags.HolderPresent)) && (FNAP || CMode == TIP_CHANGE))){
                         CTicks = 0;
                         CSeconds = 0;
