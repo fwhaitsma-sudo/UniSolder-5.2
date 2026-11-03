@@ -46,6 +46,7 @@ static int TipChangeTicks;
 static UINT8 FNAP;
 static UINT8 ManualSleep;   //sleep entered by holding the encoder button for 3 s
 static UINT8 WakeHold;      //woken by a button press: heater stays off until that press is released
+static UINT8 WakeLong;      //that press was held MENU_HOLD_TICKS or more: heater stays off until the knob moves or a new press
 static UINT8 SleepNAP;      //holder state while in manual sleep (to wake on lift)
 static UINT8 LPArmed;       //button held past 2 s: release opens menu, 5 s sleeps
 //encoder button hold times, in ticks (about 50 per second)
@@ -190,7 +191,7 @@ void OLEDTasks(int powerLost){
             DoExit = 1;
             switch(CMode){
                 case DEFAULT_MENU: //default mode - display temperature and do nothing
-                    if(CTTemp < MINTEMP && !WakeHold){ //timed standby; a wake-up press holds the heater off without entering standby
+                    if(CTTemp < MINTEMP && !WakeHold && !WakeLong){ //timed standby; a wake-up press holds the heater off without entering standby
                         CMode = STANDBY;
                         OldNAP = FNAP;
                         ModeTicks = 255;
@@ -821,6 +822,7 @@ void MenuTasks(int powerLost){
             LISRTicks = ISRTicks;
             if((LISRTicks & 1) || mainFlags.PowerLost){
                 int userInput=0;
+                int knobMoved=0;
                 for(i = 0; i < 3; i++){
                     BTicks[i].o = BTicks[i].n;
                     if(BTicks[i].n < 65535 )BTicks[i].n++;
@@ -858,6 +860,7 @@ void MenuTasks(int powerLost){
 
                 OldMode = CMode;
                 
+                knobMoved = EncDiff;
                 OLEDTasks(0);
 
                 if(BeepTicks){
@@ -937,11 +940,14 @@ void MenuTasks(int powerLost){
                     }
                     
                     //a press that wakes the automatic sleep (SLEEP T) holds the heater off until it is released
-                    if(userInput && BTicks[1].n && pars.SlTime){
+                    if(BTicks[1].n == 1 && pars.SlTime && TTemp > pars.SlTemp){
                         if(((pars.Holder == 1) || ((pars.Holder == 2) && mainFlags.HolderPresent)) ? (CSeconds >= pars.SlTime) : (CMinutes >= pars.SlTime)){
                             WakeHold = 1;
                         }
                     }
+                    //a new press after a long press: the same rule again; the knob moving ends it
+                    if(BTicks[1].n == 1 && WakeLong){ WakeLong = 0; WakeHold = 1; }
+                    if(knobMoved) WakeLong = 0;
                     if(userInput || (((pars.Holder == 1) || ((pars.Holder == 2) && mainFlags.HolderPresent)) && (FNAP || CMode == TIP_CHANGE))){
                         CTicks = 0;
                         CSeconds = 0;
@@ -961,8 +967,9 @@ void MenuTasks(int powerLost){
                             if(CMinutes >= pars.SlTime) i = pars.SlTemp;                            
                         }
                     }
+                    if(WakeHold && BTicks[1].n >= MENU_HOLD_TICKS) WakeLong = 1;
                     if(!BTicks[1].n) WakeHold = 0;
-                    if(ManualSleep || WakeHold) i = 0; //sleep: heater off; a press that wakes the unit does not heat until released
+                    if(ManualSleep || WakeHold || WakeLong) i = 0; //sleep: heater off; a wake press heats only if released before MENU_HOLD_TICKS
                     if(pars.STBTime && (CMinutes >= pars.STBTime)) i = 0;
                     CTTemp = i;
 
