@@ -14,6 +14,7 @@ Only what is in the firmware now is listed. Reverted and superseded changes are 
 - **Hold 1 s and release:** opens the menu. (b16acf9)
 - **Hold 3 s:** enters standby (HOT/ZZZ screensaver), with the heater off. (b16acf9, baa0e79, 6ceb1bd)
 - **Wake from standby:** turning the knob, pressing the button, or lifting the iron from its stand (if it was in the stand when standby started). (baa0e79)
+- **Wake from automatic sleep (SLEEP T):** a button press wakes the iron, but the heater stays off until the button is released. (7ac2890)
 
 ## Presets (T1–T4)
 
