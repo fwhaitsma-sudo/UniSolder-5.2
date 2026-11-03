@@ -822,6 +822,7 @@ void MenuTasks(int powerLost){
             LISRTicks = ISRTicks;
             if((LISRTicks & 1) || mainFlags.PowerLost){
                 int userInput=0;
+                int knobMoved=0;
                 for(i = 0; i < 3; i++){
                     BTicks[i].o = BTicks[i].n;
                     if(BTicks[i].n < 65535 )BTicks[i].n++;
@@ -859,7 +860,7 @@ void MenuTasks(int powerLost){
 
                 OldMode = CMode;
                 
-                if(EncDiff || (BTicks[1].n == 1)) WakeLong = 0; //knob moved or a new press: normal heating again
+                knobMoved = EncDiff;
                 OLEDTasks(0);
 
                 if(BeepTicks){
@@ -939,11 +940,14 @@ void MenuTasks(int powerLost){
                     }
                     
                     //a press that wakes the automatic sleep (SLEEP T) holds the heater off until it is released
-                    if(userInput && BTicks[1].n && pars.SlTime){
+                    if(BTicks[1].n == 1 && pars.SlTime && TTemp > pars.SlTemp){
                         if(((pars.Holder == 1) || ((pars.Holder == 2) && mainFlags.HolderPresent)) ? (CSeconds >= pars.SlTime) : (CMinutes >= pars.SlTime)){
                             WakeHold = 1;
                         }
                     }
+                    //a new press after a long press: the same rule again; the knob moving ends it
+                    if(BTicks[1].n == 1 && WakeLong){ WakeLong = 0; WakeHold = 1; }
+                    if(knobMoved) WakeLong = 0;
                     if(userInput || (((pars.Holder == 1) || ((pars.Holder == 2) && mainFlags.HolderPresent)) && (FNAP || CMode == TIP_CHANGE))){
                         CTicks = 0;
                         CSeconds = 0;
