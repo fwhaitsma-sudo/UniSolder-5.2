@@ -16,6 +16,8 @@ Only what is in the firmware now is listed. Reverted and superseded changes are 
 - **Wake from standby:** turning the knob, pressing the button, or lifting the iron from its stand (if it was in the stand when standby started). (baa0e79)
 - **Wake from automatic sleep (SLEEP T):** a button press wakes the iron. A press under 1 s heats the iron on release. A press of 1 s or longer leaves the heater off until the knob is turned or a new press is made. This wake only applies while SLEEP T is in effect, so a menu press after a timeout does not go to standby. (7ac2890, 1186af0, bbe9340, b59a217)
 - **Wake from standby (zzz):** a button press heats the iron at once, as before.
+- **Menu operations do not heat:** turning or pressing the knob in the menu never activates the heater. (7c7c555)
+- **Leaving the menu:** by timeout or any other exit, the temperature returns to the Holder T or Sleep T in effect before the menu was entered. Sleep timers do not run while in the menu. (1b2ffe2)
 
 ## Presets (T1–T4)
 
