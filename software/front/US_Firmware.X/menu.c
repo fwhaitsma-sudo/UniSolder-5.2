@@ -930,7 +930,9 @@ void MenuTasks(int powerLost){
                     CTTemp = 0;
                 }
                 else{
-                    if((CTicks++) >= 50){
+                    //the sleep timers stop in the menu, so leaving it returns to the state from before
+                    int normalMode = (CMode == DEFAULT_MENU || CMode == SET_TEMPERATURE || CMode == RESET_TEMPERATURE);
+                    if(normalMode && (CTicks++) >= 50){
                         CTicks -= 50;
                         if(CSeconds < 255)CSeconds++;
                         if((CMSeconds++) >= 60){
@@ -949,7 +951,9 @@ void MenuTasks(int powerLost){
                     if(CMode == DEFAULT_MENU && BTicks[1].n == 1 && WakeLong){ WakeLong = 0; WakeHold = 1; }
                     //turning the knob in the normal screen ends the hold; in the menu it does not heat
                     if(knobMoved && (CMode == DEFAULT_MENU || CMode == SET_TEMPERATURE)) WakeLong = 0;
-                    if(userInput || (((pars.Holder == 1) || ((pars.Holder == 2) && mainFlags.HolderPresent)) && (FNAP || CMode == TIP_CHANGE))){
+                    //leaving the menu ends a long-press hold: the target is the one from before the menu
+                    if(CMode == DEFAULT_MENU && OldMode != DEFAULT_MENU && OldMode != SET_TEMPERATURE && OldMode != RESET_TEMPERATURE) WakeLong = 0;
+                    if(normalMode && !WakeHold && !WakeLong && (userInput || (((pars.Holder == 1) || ((pars.Holder == 2) && mainFlags.HolderPresent)) && (FNAP || CMode == TIP_CHANGE)))){
                         CTicks = 0;
                         CSeconds = 0;
                         CMSeconds = 0;
@@ -969,7 +973,15 @@ void MenuTasks(int powerLost){
                         }
                     }
                     if(WakeHold && BTicks[1].n >= MENU_HOLD_TICKS) WakeLong = 1;
-                    if(!BTicks[1].n) WakeHold = 0;
+                    if(!BTicks[1].n){
+                        if(WakeHold && BTicks[1].o < MENU_HOLD_TICKS){ //short wake press: normal heating from the release
+                            CTicks = 0;
+                            CSeconds = 0;
+                            CMSeconds = 0;
+                            CMinutes = 0;
+                        }
+                        WakeHold = 0;
+                    }
                     if(ManualSleep || WakeHold || WakeLong) i = 0; //sleep: heater off; a wake press heats only if released before MENU_HOLD_TICKS
                     if(pars.STBTime && (CMinutes >= pars.STBTime)) i = 0;
                     CTTemp = i;
