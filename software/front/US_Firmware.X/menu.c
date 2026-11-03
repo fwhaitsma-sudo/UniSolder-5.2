@@ -47,6 +47,9 @@ static UINT8 FNAP;
 static UINT8 ManualSleep;   //sleep entered by holding the encoder button for 5 s
 static UINT8 SleepNAP;      //holder state while in manual sleep (to wake on lift)
 static UINT8 LPArmed;       //button held past 2 s: release opens menu, 5 s sleeps
+//encoder button hold times, in ticks (about 50 per second)
+#define MENU_HOLD_TICKS    50   //1 s: a release after this opens the menu
+#define STANDBY_HOLD_TICKS 150  //3 s: holding past this enters standby (manual sleep)
 #define PRESET_PAR(p) (((p) <= 2) || ((p) == 22))  //T1-T3 and T4 in the settings table
 static UINT8 IgnoreKey;     //ignore the rest of a press that woke from manual sleep
 static UINT8 DblTicks;      //two-iron adapter: time left to press again for a double-press
@@ -206,7 +209,7 @@ void OLEDTasks(int powerLost){
                         DblTicks = 0;
                         CMode = SET_TEMPERATURE;
                     }
-                    if(!IgnoreKey && BTicks[1].o && BTicks[1].o < 100 && BTicks[1].n == 0){
+                    if(!IgnoreKey && BTicks[1].o && BTicks[1].o < MENU_HOLD_TICKS && BTicks[1].n == 0){
                         if(IronPairActive()){
                             DblTicks = DBL_PRESS_TICKS; //decide after the double-press window
                         }
@@ -220,11 +223,11 @@ void OLEDTasks(int powerLost){
                         break;
                     }
                     if(!IgnoreKey){
-                        if(BTicks[1].o <= 100 && BTicks[1].n > 100){ //2 s: beep, release now opens the menu
+                        if(BTicks[1].o <= MENU_HOLD_TICKS && BTicks[1].n > MENU_HOLD_TICKS){ //1 s: beep, release now opens the menu
                             LPArmed = 1;
                             BeepTicks = 2;
                         }
-                        if(LPArmed && BTicks[1].o <= 250 && BTicks[1].n > 250){ //5 s: manual sleep
+                        if(LPArmed && BTicks[1].o <= STANDBY_HOLD_TICKS && BTicks[1].n > STANDBY_HOLD_TICKS){ //3 s: manual sleep
                             LPArmed = 0;
                             ManualSleep = 1;
                             SleepNAP = FNAP;
