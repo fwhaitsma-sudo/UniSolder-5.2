@@ -190,7 +190,7 @@ void OLEDTasks(int powerLost){
             DoExit = 1;
             switch(CMode){
                 case DEFAULT_MENU: //default mode - display temperature and do nothing
-                    if(CTTemp < MINTEMP){                        
+                    if(CTTemp < MINTEMP && !WakeHold){ //timed standby; a wake-up press holds the heater off without entering standby
                         CMode = STANDBY;
                         OldNAP = FNAP;
                         ModeTicks = 255;
