@@ -51,6 +51,7 @@ static UINT8 LPArmed;       //button held past 2 s: release opens menu, 5 s slee
 #define MENU_HOLD_TICKS    50   //1 s: a release after this opens the menu
 #define STANDBY_HOLD_TICKS 150  //3 s: holding past this enters standby (manual sleep)
 #define PRESET_PAR(p) (((p) <= 2) || ((p) == 22))  //T1-T3 and T4 in the settings table
+static UINT8 PresetFirstTurn; //first turn after opening a preset: jumps to OFF, or on from OFF
 static UINT8 IgnoreKey;     //ignore the rest of a press that woke from manual sleep
 static UINT8 DblTicks;      //two-iron adapter: time left to press again for a double-press
 
@@ -367,7 +368,10 @@ void OLEDTasks(int powerLost){
                                     CMode=SET_PARAMS;
                                     break;
                             }
-                            if(CMode == SET_PARAMS) CParVal = pars.b[(UINT8)MenuOrder[(UINT8)CPar]];
+                            if(CMode == SET_PARAMS){
+                                CParVal = pars.b[(UINT8)MenuOrder[(UINT8)CPar]];
+                                PresetFirstTurn = PRESET_PAR(MenuOrder[(UINT8)CPar]);
+                            }
                         }
                         OLEDFlags.f.Pars = 1;
                     }
@@ -382,13 +386,23 @@ void OLEDTasks(int powerLost){
                         }
                         else {
                             int dir = EncDiff;
-                            if(EncDiff > 0)CParVal++;
-                            if(EncDiff < 0)CParVal--;
-                            EncDiff=0;
-                            //presets: 0 is OFF, otherwise the temperature starts at MINTEMP
-                            if(PRESET_PAR(p) && CParVal > 0 && CParVal < MINTEMP) CParVal = (dir > 0) ? MINTEMP : 0;
-                            if((CParVal < ParDef[p].Min))CParVal = ParDef[p].Max;
-                            if((CParVal > ParDef[p].Max))CParVal = ParDef[p].Min;
+                            if(PresetFirstTurn && dir){
+                                //first turn of a preset: a temperature goes to OFF in one step;
+                                //from OFF it goes to the first temperature (up) or the top one (down)
+                                PresetFirstTurn = 0;
+                                if(CParVal != 0) CParVal = 0;
+                                else CParVal = (dir > 0) ? MINTEMP : ParDef[p].Max;
+                                EncDiff = 0;
+                            }
+                            else{
+                                if(EncDiff > 0)CParVal++;
+                                if(EncDiff < 0)CParVal--;
+                                EncDiff=0;
+                                //presets: 0 is OFF, otherwise the temperature starts at MINTEMP
+                                if(PRESET_PAR(p) && CParVal > 0 && CParVal < MINTEMP) CParVal = (dir > 0) ? MINTEMP : 0;
+                                if((CParVal < ParDef[p].Min))CParVal = ParDef[p].Max;
+                                if((CParVal > ParDef[p].Max))CParVal = ParDef[p].Min;
+                            }
                             if(ParDef[p].Immediate)pars.b[p] = CParVal;
                         }
                         OLEDFlags.f.Pars = 1;
