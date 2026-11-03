@@ -44,7 +44,8 @@ static UINT8 OldNAP;
 static int NapTicks;
 static int TipChangeTicks;
 static UINT8 FNAP;
-static UINT8 ManualSleep;   //sleep entered by holding the encoder button for 5 s
+static UINT8 ManualSleep;   //sleep entered by holding the encoder button for 3 s
+static UINT8 WakeHold;      //woken by a button press: heater stays off until that press is released
 static UINT8 SleepNAP;      //holder state while in manual sleep (to wake on lift)
 static UINT8 LPArmed;       //button held past 2 s: release opens menu, 5 s sleeps
 //encoder button hold times, in ticks (about 50 per second)
@@ -489,7 +490,7 @@ void OLEDTasks(int powerLost){
                 case STANDBY: //stand-by
                     if(ManualSleep){ //manual sleep (5 s hold): wake on knob, button press or lifting the iron from its stand
                         if(EncDiff || (!BTicks[1].o && BTicks[1].n) || (FNAP && !SleepNAP)){
-                            if(BTicks[1].n) IgnoreKey = 1;
+                            if(BTicks[1].n){ IgnoreKey = 1; WakeHold = 1; }
                             EncDiff = 0;
                             ManualSleep = 0;
                             CMode = DEFAULT_MENU;
@@ -954,7 +955,8 @@ void MenuTasks(int powerLost){
                             if(CMinutes >= pars.SlTime) i = pars.SlTemp;                            
                         }
                     }
-                    if(ManualSleep) i = 0; //manual sleep: heater off, the iron cools until it is lifted from the stand
+                    if(!BTicks[1].n) WakeHold = 0;
+                    if(ManualSleep || WakeHold) i = 0; //sleep: heater off; a press that wakes the unit does not heat until released
                     if(pars.STBTime && (CMinutes >= pars.STBTime)) i = 0;
                     CTTemp = i;
 
