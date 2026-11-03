@@ -490,7 +490,7 @@ void OLEDTasks(int powerLost){
                 case STANDBY: //stand-by
                     if(ManualSleep){ //manual sleep (5 s hold): wake on knob, button press or lifting the iron from its stand
                         if(EncDiff || (!BTicks[1].o && BTicks[1].n) || (FNAP && !SleepNAP)){
-                            if(BTicks[1].n){ IgnoreKey = 1; WakeHold = 1; }
+                            if(BTicks[1].n) IgnoreKey = 1;
                             EncDiff = 0;
                             ManualSleep = 0;
                             CMode = DEFAULT_MENU;
