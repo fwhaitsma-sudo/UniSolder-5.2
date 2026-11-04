@@ -622,16 +622,23 @@ void OLEDTasks(int powerLost){
         }        
     }
     
-    if(OLEDFlags.f.StandBy){
-        //screensaver: the text bounces around the screen (18 characters x 6 pixels wide, 8 pixels high)
-        static int X, Y, DX, DY;
-        if(X <= 0) DX = 1;
-        if(Y <= 0) DY = 1;
-        if(X >= ((127 - 108) * 2)) DX = -1;
-        if(Y >= ((63 - 8) * 2)) DY = -1;
-        OLEDPrintXY68(X >> 1, Y >> 1, "ready when you are", 18);
-        X += DX;
-        Y += DY;
+    {
+        //screensaver: the text (18 characters x 6 pixels wide, 8 pixels high) jumps to a random position every 30 s
+        static UINT32 SaverSeed;
+        static int SaverTicks, SaverX, SaverY;
+        if(OLEDFlags.f.StandBy){
+            if(SaverTicks == 0){ //on entering standby and then every 30 s (about 50 calls per second)
+                SaverSeed = SaverSeed * 1664525UL + 1013904223UL + ISRTicks;
+                SaverX = (SaverSeed >> 16) % (128 - 108 + 1);
+                SaverSeed = SaverSeed * 1664525UL + 1013904223UL + DispTemp;
+                SaverY = (SaverSeed >> 16) % (64 - 8 + 1);
+            }
+            if(++SaverTicks >= 1500) SaverTicks = 0;
+            OLEDPrintXY68(SaverX, SaverY, "ready when you are", 18);
+        }
+        else{
+            SaverTicks = 0;
+        }
     }
 
     if(OLEDFlags.f.Input){
