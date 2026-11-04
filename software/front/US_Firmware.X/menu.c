@@ -623,29 +623,17 @@ void OLEDTasks(int powerLost){
     }
     
     if(OLEDFlags.f.StandBy){
+        //screensaver: the text bounces around the screen (18 characters x 6 pixels wide, 8 pixels high)
         static int X, Y, DX, DY;
         if(X <= 0) DX = 1;
         if(Y <= 0) DY = 1;
-        if((DispTemp >> 4) > 60 && !PV1->NoHeater && !PV1->NoSensor && !PV1->ShortCircuit && !PV2->NoHeater && !PV2->NoSensor && !PV2->ShortCircuit){
-            if(X >= ((127 - 24) * 2)){
-                X = (127 - 24 )* 2;
-                DX = -1;
-            }
-            if(Y >= ((63 - 16) * 2)){
-                Y = (63 - 16) * 2;
-                DY =- 1;                                    
-            }            
-            OLEDPrintXY816(X >> 1, Y >> 1, "HOT", 3);
-        }
-        else{
-            if(X >= ((127 - 18) * 2)) DX = -1;
-            if(Y >= ((63 - 8) * 2)) DY =- 1;                                    
-            OLEDPrintXY68(X >> 1, Y >> 1, "ZZZ", 3);
-        }
+        if(X >= ((127 - 108) * 2)) DX = -1;
+        if(Y >= ((63 - 8) * 2)) DY = -1;
+        OLEDPrintXY68(X >> 1, Y >> 1, "ready when you are", 18);
         X += DX;
-        Y += DY;        
+        Y += DY;
     }
-    
+
     if(OLEDFlags.f.Input){
         const char * StrEncoder[]   = {
             "KEYS", 
