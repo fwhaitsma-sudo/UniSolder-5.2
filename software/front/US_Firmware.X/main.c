@@ -56,15 +56,6 @@ int main(void){
 
     OLEDInit();
     
-    {
-        int i, x, y;          
-        i = 1023;
-        for(x = 0; x < 128; x++){
-            for(y = 0; y < 8; y++){
-                OLEDBUFF.B[y][x] = ~logo[i--];
-            }
-        }
-    }
     OLEDPrintNum68(0, 0, 1, 0);
     OLEDUpdate();
     
@@ -160,6 +151,27 @@ int main(void){
     OLEDUpdate();
 
     LoadPars();
+
+    //boot screen: "Hi <name>!" when a name is set in the menu, otherwise the logo
+    if(UserName[0]){
+        char s[NAME_LEN + 5];
+        int n = 0, i;
+        OLEDFill(0, 128, 0, 8, 0);
+        s[n++] = 'H'; s[n++] = 'i'; s[n++] = ' ';
+        for(i = 0; UserName[i]; i++) s[n++] = UserName[i];
+        s[n++] = '!';
+        s[n] = 0;
+        OLEDPrintXY816((128 - 8 * n) / 2, 24, s, 0);
+    }
+    else{
+        int i, x, y;
+        i = 1023;
+        for(x = 0; x < 128; x++){
+            for(y = 0; y < 8; y++){
+                OLEDBUFF.B[y][x] = ~logo[i--];
+            }
+        }
+    }
     OLEDPrintNum68(0, 0, 2, 46);
     OLEDUpdate();
 

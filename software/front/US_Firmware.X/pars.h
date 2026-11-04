@@ -55,11 +55,17 @@ typedef struct {
 
 #define FIRST_CUSTOM_PAR   19   //settings from here on were added after the original firmware
 
+#define NAME_LEN           10   //characters in the name shown at power-up
+#define NAME_EEP_ADDR      32   //EEPROM: marker byte, then NAME_LEN characters and a 0 (free area between the settings and the temperature log)
+#define NAME_EEP_MARK      0xA5
+
 #define NB_OF_MENU_PARAMS  (sizeof(MenuOrder) / sizeof(MenuOrder[0])
 
 #ifndef _PARS_C
-extern const char MenuOrder[21];
-extern const t_ParDef ParDef[28];
+extern const char MenuOrder[22];
+extern const t_ParDef ParDef[29];
+extern char UserName[NAME_LEN + 1];  //name shown at power-up, empty = show the logo
+extern void SaveName(void);
 extern void LoadPars(void);
 extern void SavePars();
 #endif

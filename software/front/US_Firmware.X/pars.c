@@ -20,7 +20,9 @@ const char * StrButtons[]   = {"+/- ", "-/+ "};
 const char * StrOffOnAuto[] = {"OFF ", "ON  ", "AUTO"};
 const char * StrMenuUp[]    = {"KEY+", "KEY-"};
 
-const unsigned char MenuOrder[] = {18,19,0,1,2,22,3,4,5,6,7,11,13,8,10,14,9,12,16,17,27};
+const unsigned char MenuOrder[] = {18,19,0,1,2,22,3,4,5,6,7,11,13,8,10,14,9,12,16,17,28,27};
+
+char UserName[NAME_LEN + 1];
 
 const t_ParDef ParDef[] = {
 //  NAME            DEF  MIN      MAX      IMMEDIATE SUFFIX STRINGS       DISPFUNC    
@@ -53,6 +55,7 @@ const t_ParDef ParDef[] = {
     {"   MEMORY  ",   0,       0, MAXTEMP, 0,            0, 0,            0}, //25 not in menu: T3 memory
     {"   MEMORY  ",   0,       0, MAXTEMP, 0,            0, 0,            0}, //26 not in menu: T4 memory
     {"   VERSION ",   0,       0,       0, 0,            0, 0,            0}, //27
+    {"      NAME ",   0,       0,       0, 0,            0, 0,            0}, //28 name shown at power-up
 };
 
 void ParDispStr(int par, int col, int row, int num){
@@ -104,6 +107,36 @@ void ParDispTemp(int par, int col, int row, int temp){
     ParDispCF(par, col + 24, row, pars.Deg);
 }
 
+//Reads the power-up name from EEPROM. Without the marker byte, or with anything
+//that is not printable text, the name is empty and the logo is shown.
+static void LoadName(void)
+{
+    int i;
+    UINT8 mark = EEPRead(NAME_EEP_ADDR, 0, 1);
+
+    for(i = 0; i <= NAME_LEN; i++) UserName[i] = 0;
+    if(mark != NAME_EEP_MARK) return;
+    EEPRead(NAME_EEP_ADDR + 1, (UINT8 *)UserName, NAME_LEN + 1);
+    UserName[NAME_LEN] = 0;
+    for(i = 0; i < NAME_LEN; i++){
+        if((UserName[i] < 32) || (UserName[i] > 126)){
+            for(; i <= NAME_LEN; i++) UserName[i] = 0;
+            break;
+        }
+    }
+}
+
+//Writes the power-up name to EEPROM at once (only the bytes that changed).
+void SaveName(void)
+{
+    int i;
+
+    if(EEPRead(NAME_EEP_ADDR, 0, 1) != NAME_EEP_MARK) EEPWriteImm(NAME_EEP_ADDR, NAME_EEP_MARK);
+    for(i = 0; i <= NAME_LEN; i++){
+        if(EEPRead(NAME_EEP_ADDR + 1 + i, 0, 1) != (UINT8)UserName[i]) EEPWriteImm(NAME_EEP_ADDR + 1 + i, UserName[i]);
+    }
+}
+
 void LoadPars(void)
 {
     int i;
@@ -126,6 +159,8 @@ void LoadPars(void)
             break;
         }
     }
+
+    LoadName();
 
     TTemp = 150;
     oldb = EEPRead(64 + 63, 0, 1);

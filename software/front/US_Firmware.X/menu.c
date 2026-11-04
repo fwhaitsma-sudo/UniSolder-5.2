@@ -2,6 +2,7 @@
 
 #include <GenericTypeDefs.h>
 #include <stdlib.h>
+#include <string.h>
 #include "typedefs.h"
 #include "mcu.h"
 #include "pars.h"
@@ -57,6 +58,9 @@ static int PresetLastOn;   //last temperature of the preset being edited (restor
 #define PRESET_SLOT(p) (((p) == 22) ? 3 : (p))  //index in pars.RTempMem
 static UINT8 PresetArmed;     //the first click from a temperature jumps to OFF; used up until the next confirm
 static UINT8 IgnoreKey;     //ignore the rest of a press that woke from manual sleep
+static char NameBuf[NAME_LEN + 1];  //name being edited
+static int NamePos;                 //cursor position in NameBuf
+static const char NameChars[] = " ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-.";
 static UINT8 DblTicks;      //two-iron adapter: time left to press again for a double-press
 
 #define DBL_PRESS_TICKS 20  //0.4 s window for the second press of a double-press
@@ -79,6 +83,7 @@ static union {
         int Input:1;
         int Version:1;
         int Sleep:1;
+        int NameEdit:1;
     }f;
 }OLEDFlags;
 
@@ -368,6 +373,15 @@ void OLEDTasks(int powerLost){
                                 case 27: //Version info
                                     CMode=VERSION_INFO;
                                     break;
+                                case 28: //name shown at power-up
+                                    {
+                                        int k;
+                                        for(k = 0; k < NAME_LEN; k++) NameBuf[k] = UserName[k] ? UserName[k] : ' ';
+                                        NameBuf[NAME_LEN] = 0;
+                                        NamePos = 0;
+                                        CMode=NAME_EDIT;
+                                    }
+                                    break;
                                 default:
                                     CMode=SET_PARAMS;
                                     break;
@@ -487,6 +501,36 @@ void OLEDTasks(int powerLost){
                         break;
                     }
                     OLEDFlags.f.Version = 1;
+                    break;
+                case NAME_EDIT: //edit the name shown at power-up
+                    if(BTicks[1].n || EncDiff) ModeTicks = 250;
+                    if(EncDiff){ //turn: change the character at the cursor
+                        const char * f = strchr(NameChars, NameBuf[NamePos]);
+                        int k = f ? (int)(f - NameChars) : 0;
+                        int n = sizeof(NameChars) - 1;
+                        k += (EncDiff > 0) ? 1 : -1;
+                        if(k < 0) k = n - 1;
+                        if(k >= n) k = 0;
+                        NameBuf[NamePos] = NameChars[k];
+                        EncDiff = 0;
+                    }
+                    if(BTicks[1].o && !BTicks[1].n){ //button released
+                        if(BTicks[1].o < MENU_HOLD_TICKS && NamePos < NAME_LEN - 1){ //short press: next character
+                            NamePos++;
+                            BeepTicks = 1;
+                        }
+                        else{ //held 1 s, or short press on the last character: save
+                            int k;
+                            for(k = 0; k < NAME_LEN; k++) UserName[k] = NameBuf[k];
+                            UserName[NAME_LEN] = 0;
+                            for(k = NAME_LEN - 1; k >= 0 && UserName[k] == ' '; k--) UserName[k] = 0;
+                            SaveName();
+                            BeepTicks = 2;
+                            CMode = MENU;
+                            break;
+                        }
+                    }
+                    OLEDFlags.f.NameEdit = 1;
                     break;
                 case STANDBY: //stand-by
                     if(ManualSleep){ //manual sleep (5 s hold): wake on knob, button press or lifting the iron from its stand
@@ -747,6 +791,14 @@ void OLEDTasks(int powerLost){
 
     }
     
+    if(OLEDFlags.f.NameEdit){
+        OLEDPrint68(0, 0, "YOUR NAME", 0);
+        OLEDPrintXY816(24, 24, NameBuf, NAME_LEN);
+        OLEDInvertXY(24 + 8 * NamePos, 8, 24, 16);
+        OLEDPrint68(0, 6, "TURN:CHAR PRESS:NEXT", 0);
+        OLEDPrint68(0, 7, "HOLD 1S:SAVE", 0);
+    }
+
     if(OLEDFlags.f.Version){
         OLEDPrint68(0,0,"VERSION INFO", 0);
         OLEDPrint68(0,2,"HW VER:", 0);
