@@ -61,6 +61,21 @@ static UINT8 IgnoreKey;     //ignore the rest of a press that woke from manual s
 static char NameBuf[NAME_LEN + 1];  //name being edited
 static int NamePos;                 //cursor position in NameBuf
 static const char NameChars[] = " ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-.";
+static char PinBuf[PIN_LEN + 1];    //pincode being entered or edited
+static int PinPos;                  //cursor position in PinBuf
+static const char PinChars[] = "-0123456789";   //'-' only while setting: no digit
+
+//Turns the digit at the cursor one step. Entering a pincode uses digits only, setting one also allows '-'.
+static void PinStep(int dir, int digitsOnly){
+    const char * f = strchr(PinChars, PinBuf[PinPos]);
+    int lo = digitsOnly ? 1 : 0;
+    int n = sizeof(PinChars) - 1;
+    int k = f ? (int)(f - PinChars) : lo;
+    k += (dir > 0) ? 1 : -1;
+    if(k < lo) k = n - 1;
+    if(k >= n) k = lo;
+    PinBuf[PinPos] = PinChars[k];
+}
 static UINT8 DblTicks;      //two-iron adapter: time left to press again for a double-press
 
 #define DBL_PRESS_TICKS 20  //0.4 s window for the second press of a double-press
@@ -84,6 +99,8 @@ static union {
         int Version:1;
         int Sleep:1;
         int NameEdit:1;
+        int PinEntry:1;
+        int PinEdit:1;
     }f;
 }OLEDFlags;
 
@@ -247,8 +264,17 @@ void OLEDTasks(int powerLost){
                         }
                         if(LPArmed && BTicks[1].o && !BTicks[1].n){ //released between 2 and 5 s: menu
                             LPArmed = 0;
-                            CMode = MENU;
                             ModeTicks = 250;
+                            if(UserPin[0]){ //a pincode is set: ask for it before opening the menu
+                                int k;
+                                for(k = 0; k < PIN_LEN; k++) PinBuf[k] = '0';
+                                PinBuf[PIN_LEN] = 0;
+                                PinPos = 0;
+                                CMode = PIN_ENTRY;
+                            }
+                            else{
+                                CMode = MENU;
+                            }
                         }
                     }
                     OLEDFlags.f.Header = 1;
@@ -372,6 +398,15 @@ void OLEDTasks(int powerLost){
                                     break;
                                 case 27: //Version info
                                     CMode=VERSION_INFO;
+                                    break;
+                                case 29: //pincode
+                                    {
+                                        int k;
+                                        for(k = 0; k < PIN_LEN; k++) PinBuf[k] = UserPin[k] ? UserPin[k] : '-';
+                                        PinBuf[PIN_LEN] = 0;
+                                        PinPos = 0;
+                                        CMode=PIN_EDIT;
+                                    }
                                     break;
                                 case 28: //name shown at power-up
                                     {
@@ -531,6 +566,59 @@ void OLEDTasks(int powerLost){
                         }
                     }
                     OLEDFlags.f.NameEdit = 1;
+                    break;
+                case PIN_ENTRY: //enter the pincode to open the menu
+                    if(BTicks[1].n || EncDiff) ModeTicks = 250;
+                    if(EncDiff){
+                        PinStep(EncDiff, 1);
+                        EncDiff = 0;
+                    }
+                    if(BTicks[1].o && !BTicks[1].n){ //button released: next digit, or check the pincode after the last one
+                        if(PinPos < PIN_LEN - 1){
+                            PinPos++;
+                            BeepTicks = 1;
+                        }
+                        else{
+                            if(memcmp(PinBuf, UserPin, PIN_LEN) == 0){
+                                CMode = MENU;
+                                ModeTicks = 250;
+                                BeepTicks = 2;
+                            }
+                            else{
+                                CMode = DEFAULT_MENU;
+                                BeepTicks = 12;
+                            }
+                            break;
+                        }
+                    }
+                    OLEDFlags.f.PinEntry = 1;
+                    break;
+                case PIN_EDIT: //set or clear the pincode
+                    if(BTicks[1].n || EncDiff) ModeTicks = 250;
+                    if(EncDiff){
+                        PinStep(EncDiff, 0);
+                        EncDiff = 0;
+                    }
+                    if(BTicks[1].o && !BTicks[1].n){ //button released
+                        if(BTicks[1].o < MENU_HOLD_TICKS && PinPos < PIN_LEN - 1){ //short press: next digit
+                            PinPos++;
+                            BeepTicks = 1;
+                        }
+                        else{ //held 1 s, or short press on the last digit: save
+                            int k, dashes = 0;
+                            for(k = 0; k < PIN_LEN; k++) if(PinBuf[k] == '-') dashes++;
+                            if(dashes == 0 || dashes == PIN_LEN){ //four digits, or four dashes: no pincode
+                                for(k = 0; k < PIN_LEN; k++) UserPin[k] = dashes ? 0 : PinBuf[k];
+                                UserPin[PIN_LEN] = 0;
+                                SavePin();
+                                BeepTicks = 2;
+                                CMode = MENU;
+                                break;
+                            }
+                            BeepTicks = 12; //some digits missing: not saved
+                        }
+                    }
+                    OLEDFlags.f.PinEdit = 1;
                     break;
                 case STANDBY: //stand-by
                     if(ManualSleep){ //manual sleep (5 s hold): wake on knob, button press or lifting the iron from its stand
@@ -791,6 +879,26 @@ void OLEDTasks(int powerLost){
 
     }
     
+    if(OLEDFlags.f.PinEntry){
+        char s[PIN_LEN + 1];
+        int k;
+        for(k = 0; k < PIN_LEN; k++) s[k] = (k < PinPos) ? '*' : ((k == PinPos) ? PinBuf[k] : '_');
+        s[PIN_LEN] = 0;
+        OLEDPrint68(0, 0, "ENTER PINCODE", 0);
+        OLEDPrintXY816(48, 24, s, PIN_LEN);
+        OLEDInvertXY(48 + 8 * PinPos, 8, 24, 16);
+        OLEDPrint68(0, 7, "TURN:DIGIT PRESS:NEXT", 0);
+    }
+
+    if(OLEDFlags.f.PinEdit){
+        OLEDPrint68(0, 0, "SET PINCODE", 0);
+        OLEDPrintXY816(48, 24, PinBuf, PIN_LEN);
+        OLEDInvertXY(48 + 8 * PinPos, 8, 24, 16);
+        OLEDPrint68(0, 5, "TURN:DIGIT PRESS:NEXT", 0);
+        OLEDPrint68(0, 6, "HOLD 1S OR LAST: SAVE", 0);
+        OLEDPrint68(0, 7, "---- = NO PINCODE", 0);
+    }
+
     if(OLEDFlags.f.NameEdit){
         OLEDPrint68(0, 0, "YOUR NAME", 0);
         OLEDPrintXY816(24, 24, NameBuf, NAME_LEN);

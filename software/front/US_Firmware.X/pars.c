@@ -20,9 +20,10 @@ const char * StrButtons[]   = {"+/- ", "-/+ "};
 const char * StrOffOnAuto[] = {"OFF ", "ON  ", "AUTO"};
 const char * StrMenuUp[]    = {"KEY+", "KEY-"};
 
-const unsigned char MenuOrder[] = {18,19,0,1,2,22,3,4,5,6,7,11,13,8,10,14,9,12,16,17,28,27};
+const unsigned char MenuOrder[] = {18,19,0,1,2,22,3,4,5,6,7,11,13,8,10,14,9,12,16,17,28,29,27};
 
 char UserName[NAME_LEN + 1];
+char UserPin[PIN_LEN + 1];
 
 const t_ParDef ParDef[] = {
 //  NAME            DEF  MIN      MAX      IMMEDIATE SUFFIX STRINGS       DISPFUNC    
@@ -56,6 +57,7 @@ const t_ParDef ParDef[] = {
     {"   MEMORY  ",   0,       0, MAXTEMP, 0,            0, 0,            0}, //26 not in menu: T4 memory
     {"   VERSION ",   0,       0,       0, 0,            0, 0,            0}, //27
     {"      NAME ",   0,       0,       0, 0,            0, 0,            0}, //28 name shown at power-up
+    {"   PINCODE ",   0,       0,       0, 0,            0, 0,            0}, //29 menu pincode
 };
 
 void ParDispStr(int par, int col, int row, int num){
@@ -137,6 +139,35 @@ void SaveName(void)
     }
 }
 
+//Reads the menu pincode from EEPROM. Without the marker byte, or with anything
+//other than exactly PIN_LEN digits, there is no pincode.
+static void LoadPin(void)
+{
+    int i;
+
+    for(i = 0; i <= PIN_LEN; i++) UserPin[i] = 0;
+    if(EEPRead(PIN_EEP_ADDR, 0, 1) != PIN_EEP_MARK) return;
+    EEPRead(PIN_EEP_ADDR + 1, (UINT8 *)UserPin, PIN_LEN + 1);
+    UserPin[PIN_LEN] = 0;
+    for(i = 0; i < PIN_LEN; i++){
+        if((UserPin[i] < '0') || (UserPin[i] > '9')){
+            for(i = 0; i <= PIN_LEN; i++) UserPin[i] = 0;
+            return;
+        }
+    }
+}
+
+//Writes the menu pincode to EEPROM at once (only the bytes that changed).
+void SavePin(void)
+{
+    int i;
+
+    if(EEPRead(PIN_EEP_ADDR, 0, 1) != PIN_EEP_MARK) EEPWriteImm(PIN_EEP_ADDR, PIN_EEP_MARK);
+    for(i = 0; i <= PIN_LEN; i++){
+        if(EEPRead(PIN_EEP_ADDR + 1 + i, 0, 1) != (UINT8)UserPin[i]) EEPWriteImm(PIN_EEP_ADDR + 1 + i, UserPin[i]);
+    }
+}
+
 void LoadPars(void)
 {
     int i;
@@ -161,6 +192,7 @@ void LoadPars(void)
     }
 
     LoadName();
+    LoadPin();
 
     TTemp = 150;
     oldb = EEPRead(64 + 63, 0, 1);

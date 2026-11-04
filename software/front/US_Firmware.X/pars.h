@@ -59,13 +59,19 @@ typedef struct {
 #define NAME_EEP_ADDR      32   //EEPROM: marker byte, then NAME_LEN characters and a 0 (free area between the settings and the temperature log)
 #define NAME_EEP_MARK      0xA5
 
+#define PIN_LEN            4    //digits in the menu pincode
+#define PIN_EEP_ADDR       44   //EEPROM: marker byte, then PIN_LEN digits (as characters) and a 0
+#define PIN_EEP_MARK       0x5A
+
 #define NB_OF_MENU_PARAMS  (sizeof(MenuOrder) / sizeof(MenuOrder[0])
 
 #ifndef _PARS_C
-extern const char MenuOrder[22];
-extern const t_ParDef ParDef[29];
+extern const char MenuOrder[23];
+extern const t_ParDef ParDef[30];
 extern char UserName[NAME_LEN + 1];  //name shown at power-up, empty = show the logo
 extern void SaveName(void);
+extern char UserPin[PIN_LEN + 1];    //menu pincode, empty = no pincode
+extern void SavePin(void);
 extern void LoadPars(void);
 extern void SavePars();
 #endif

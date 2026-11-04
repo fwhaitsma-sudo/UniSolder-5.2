@@ -189,7 +189,19 @@ int main(void){
 
     OLEDFill(0, 12, 0, 1, 0);
     OLEDUpdate();
-    _delay_ms(1000);
+    {
+        //holding the button for the whole boot screen clears a forgotten menu pincode
+        int i, held = UserPin[0] ? 1 : 0;
+        for(i = 0; i < 100; i++){
+            if(!B2) held = 0;
+            _delay_ms(10);
+        }
+        if(held){
+            for(i = 0; i <= PIN_LEN; i++) UserPin[i] = 0;
+            SavePin();
+            BeepTicks = 6;
+        }
+    }
 
     while(1){
         if(mainFlags.PowerLost){
