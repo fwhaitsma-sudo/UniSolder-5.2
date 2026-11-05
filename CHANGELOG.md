@@ -7,7 +7,7 @@ Only what is in the firmware now is listed. Reverted and superseded changes are 
 
 - **DISP.STEP** (menu, 2–5 degrees): rounds the measured temperature shown on the main screen, with half a degree of hysteresis. Works in C and F. The value 1 keeps the original display. (f40e69d)
 - **Standby screen:** the text "ready when you are" replaces HOT and ZZZ. It stays still and jumps to a random position every 30 seconds. There is no longer a HOT warning on this screen.
-- **Name and boot screen:** a NAME menu item sets a name of up to 10 characters (turn to change the character, press for the next one, hold 1 s or press on the last one to save). The boot screen reads "Hi <name>!" in place of the logo. Without a name, the logo is shown. The name is stored in the EEPROM when saved.
+- **Welcome screen with your name:** at power-up the boot logo is replaced by "Hi <name>!" (for example "Hi Foppe!"). The name is set in the new NAME menu item, up to 10 characters: turn the knob to change the character, press for the next one, hold 1 s or press on the last one to save. A changed name shows at the next boot. With no name set, the logo is shown as before. The name is stored in the EEPROM when saved.
 - **Menu pincode:** a PINCODE menu item sets or clears a 4-digit pincode (four dashes clear it). With a pincode set, opening the menu asks for it first. Without one the menu opens as before. Holding the button for the whole boot screen clears a forgotten pincode.
 - **Faster display refresh:** only rows that changed are sent to the screen. Fill and invert are faster. (e65ddb1)
 
@@ -15,7 +15,7 @@ Only what is in the firmware now is listed. Reverted and superseded changes are 
 
 - **Short press** (under 1 s): confirms the current preset. Each further press cycles to the next active preset.
 - **Hold 1 s and release:** opens the menu. (b16acf9)
-- **Hold 3 s:** enters standby (HOT/ZZZ screensaver), with the heater off. (b16acf9, baa0e79, 6ceb1bd)
+- **Hold 3 s:** enters standby (the "ready when you are" screen), with the heater off. (b16acf9, baa0e79, 6ceb1bd)
 - **Wake from standby:** turning the knob, pressing the button, or lifting the iron from its stand (if it was in the stand when standby started). (baa0e79)
 - **Wake from automatic sleep (SLEEP T):** a button press wakes the iron. A press under 1 s heats the iron on release. A press of 1 s or longer leaves the heater off until the knob is turned or a new press is made. This wake only applies while SLEEP T is in effect, so a menu press after a timeout does not go to standby. (7ac2890, 1186af0, bbe9340, b59a217)
 - **Wake from standby (zzz):** a button press heats the iron at once, as before.
