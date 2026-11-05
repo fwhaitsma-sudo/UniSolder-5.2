@@ -6,6 +6,9 @@ Only what is in the firmware now is listed. Reverted and superseded changes are 
 ## Display and settings
 
 - **DISP.STEP** (menu, 2–5 degrees): rounds the measured temperature shown on the main screen, with half a degree of hysteresis. Works in C and F. The value 1 keeps the original display. (f40e69d)
+- **Standby screen:** the text "ready when you are" replaces HOT and ZZZ. It stays still and jumps to a random position every 30 seconds. There is no longer a HOT warning on this screen.
+- **Name and boot screen:** a NAME menu item sets a name of up to 10 characters (turn to change the character, press for the next one, hold 1 s or press on the last one to save). The boot screen reads "Hi <name>!" in place of the logo. Without a name, the logo is shown. The name is stored in the EEPROM when saved.
+- **Menu pincode:** a PINCODE menu item sets or clears a 4-digit pincode (four dashes clear it). With a pincode set, opening the menu asks for it first. Without one the menu opens as before. Holding the button for the whole boot screen clears a forgotten pincode.
 - **Faster display refresh:** only rows that changed are sent to the screen. Fill and invert are faster. (e65ddb1)
 
 ## Buttons and holds
