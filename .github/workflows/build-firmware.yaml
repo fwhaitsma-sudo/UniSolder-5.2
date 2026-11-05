@@ -1,7 +1,10 @@
 name: Build Unisolder firmware
 on: 
   workflow_dispatch:
-   
+
+permissions:
+  contents: write   # to publish the release
+
 jobs:
   build:
     name: Build project PIC32_with_bootloader
@@ -27,3 +30,17 @@ jobs:
           name: PIC32_with_bootloader
           path: ${{ github.workspace }}/software/front/US_Firmware.X/dist/PIC32_with_bootloader/production
           if-no-files-found: error
+      # Builds of the default branch are also published as a GitHub Release with the .hex to flash
+      - name: Publish release
+        if: github.ref_name == github.event.repository.default_branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          dir=software/front/US_Firmware.X/dist/PIC32_with_bootloader/production
+          hex=$(ls $dir/*.hex | head -n 1)
+          tag="fw-$(date -u +%Y%m%d-%H%M)-$(echo $GITHUB_SHA | cut -c1-7)"
+          cp "$hex" "UniSolder-firmware-$tag.hex"
+          gh release create "$tag" "UniSolder-firmware-$tag.hex" \
+            --title "Firmware $tag" \
+            --notes "Firmware built from commit $GITHUB_SHA on ${GITHUB_REF_NAME}. Flash the .hex with the UniSolder Windows application. Changes are listed in CHANGELOG.md." \
+            --target "$GITHUB_SHA"
