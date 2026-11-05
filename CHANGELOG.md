@@ -39,3 +39,4 @@ Only what is in the firmware now is listed. Reverted and superseded changes are 
 
 - **Build from the solution file** (`UniSolder.sln`, Release). (a242419)
 - **No ClickOnce manifest signing**, so the build succeeds on the CI machine. (3afd75c)
+- **.NET 10 build:** the Windows application is migrated to .NET 10 (SDK-style projects, HidSharp instead of the old USB layer), with USB communication fixes. A separate workflow, "Windows Unisolder application (.NET 10)", publishes a single-file exe that runs without installing .NET. (68e7b9f)
