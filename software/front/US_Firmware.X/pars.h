@@ -32,7 +32,7 @@ typedef union {
         UINT8 Input;                                //Input type (0 - keys, 1 - rotary encoder)
         UINT8 Cal;
         UINT8 Debug;
-        UINT8 TempStep;                             //temperature step - 1=2C, 2=4C... 25=50C
+        UINT8 TempStep;                             //temperature step in degrees C (1-50)
         UINT8 DispStep;                             //displayed temperature resolution (1-5 degrees C/F)
         UINT8 ActIron;                              //two-iron adapter: active iron (0 - iron 1, 1 - iron 2)
         UINT8 TTempAlt;                             //two-iron adapter: set temperature of the other iron
@@ -63,6 +63,8 @@ typedef struct {
 #define PIN_EEP_ADDR       44   //EEPROM: marker byte, then PIN_LEN digits (as characters) and a 0
 #define PIN_EEP_MARK       0x5A
 
+#define TFINE_EEP_ADDR     50   //EEPROM: bit 0 = the set temperature is odd, bit 1 = the other iron's temperature is odd (stored values are in units of 2 C)
+
 #define NB_OF_MENU_PARAMS  (sizeof(MenuOrder) / sizeof(MenuOrder[0])
 
 #ifndef _PARS_C
@@ -72,6 +74,7 @@ extern char UserName[NAME_LEN + 1];  //name shown at power-up, empty = show the 
 extern void SaveName(void);
 extern char UserPin[PIN_LEN + 1];    //menu pincode, empty = no pincode
 extern void SavePin(void);
+extern UINT8 TAltOdd;                //two-iron adapter: the other iron's set temperature is odd (pars.TTempAlt holds it in units of 2 C)
 extern void LoadPars(void);
 extern void SavePars();
 #endif

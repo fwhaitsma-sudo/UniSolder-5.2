@@ -188,8 +188,9 @@ void MenuInit(){
 //temperature: the active one is TTemp, the other one is kept in pars.TTempAlt.
 static void SwitchIron(void){
     unsigned int t = TTemp;
-    TTemp = pars.TTempAlt;
-    pars.TTempAlt = t;
+    TTemp = (pars.TTempAlt << 1) + TAltOdd;
+    pars.TTempAlt = t >> 1;
+    TAltOdd = t & 1;
     pars.ActIron = pars.ActIron ? 0 : 1;
     IronPairReload();
     ManualSleep = 0;
@@ -213,7 +214,7 @@ void OLEDTasks(int powerLost){
             DoExit = 1;
             switch(CMode){
                 case DEFAULT_MENU: //default mode - display temperature and do nothing
-                    if(CTTemp < MINTEMP && !WakeHold && !WakeLong){ //timed standby; a wake-up press holds the heater off without entering standby
+                    if(CTTemp < MINTEMP * 2 && !WakeHold && !WakeLong){ //timed standby; a wake-up press holds the heater off without entering standby
                         CMode = STANDBY;
                         OldNAP = FNAP;
                         ModeTicks = 255;
@@ -321,8 +322,8 @@ void OLEDTasks(int powerLost){
                             int ctt = TTemp;
                             ctt += EncDiff * pars.TempStep;;
                             EncDiff = 0;
-                            if(ctt < MINTEMP) ctt = MINTEMP;
-                            if(ctt > MAXTEMP) ctt = MAXTEMP;
+                            if(ctt < MINTEMP * 2) ctt = MINTEMP * 2;
+                            if(ctt > MAXTEMP * 2) ctt = MAXTEMP * 2;
                             TTemp = ctt;
                         }
                         if(i != TTemp)TempBeep = 1;
@@ -331,7 +332,7 @@ void OLEDTasks(int powerLost){
                     OLEDFlags.f.Footer = 1;
                     OLEDFlags.f.BigTemp = 1;
                     OLEDFlags.f.Set = 1;
-                    OLEDTemp = TTemp << 2;
+                    OLEDTemp = TTemp << 1;
                     OLEDShown = TempToShown(OLEDTemp);
                     break;
                 case RESET_TEMPERATURE: //reset temperature mode
@@ -351,8 +352,8 @@ void OLEDTasks(int powerLost){
                         for(i = 0; i < 4; i++){
                             UINT8 t = PresetTemp(CRstTemp);
                             if(t){
-                                if(TTemp != t){
-                                    TTemp = t;
+                                if(TTemp != (unsigned int)(t * 2)){
+                                    TTemp = t * 2;
                                     TempBeep = 1;
                                 }
                                 break;
@@ -360,14 +361,14 @@ void OLEDTasks(int powerLost){
                             CRstTemp++;
                             if(CRstTemp > 3)CRstTemp=0;
                         }
-                        if(TTemp < MINTEMP)TTemp = MINTEMP;
-                        if(TTemp > MAXTEMP)TTemp = MAXTEMP;
+                        if(TTemp < MINTEMP * 2)TTemp = MINTEMP * 2;
+                        if(TTemp > MAXTEMP * 2)TTemp = MAXTEMP * 2;
                     }
                     OLEDFlags.f.Header = 1;
                     OLEDFlags.f.Footer = 1;
                     OLEDFlags.f.BigTemp = 1;
                     OLEDFlags.f.TReset = 1;
-                    OLEDTemp = TTemp << 2;
+                    OLEDTemp = TTemp << 1;
                     OLEDShown = TempToShown(OLEDTemp);
                     break;
                 case MENU: //menu mode
@@ -1097,7 +1098,7 @@ void MenuTasks(int powerLost){
                     }
                     
                     //a press that wakes the automatic sleep (SLEEP T) holds the heater off until it is released
-                    if(CMode == DEFAULT_MENU && BTicks[1].n == 1 && pars.SlTime && TTemp > pars.SlTemp){
+                    if(CMode == DEFAULT_MENU && BTicks[1].n == 1 && pars.SlTime && TTemp > (unsigned int)(pars.SlTemp * 2)){
                         if(((pars.Holder == 1) || ((pars.Holder == 2) && mainFlags.HolderPresent)) ? (CSeconds >= pars.SlTime) : (CMinutes >= pars.SlTime)){
                             WakeHold = 1;
                         }
@@ -1117,14 +1118,14 @@ void MenuTasks(int powerLost){
 
                     i = TTemp;
                     if(!FNAP){
-                        if(i > pars.HTemp) i = pars.HTemp;
+                        if(i > pars.HTemp * 2) i = pars.HTemp * 2;
                     }
-                    if(pars.SlTime && (i > pars.SlTemp)){
+                    if(pars.SlTime && (i > pars.SlTemp * 2)){
                         if((pars.Holder == 1) || ((pars.Holder == 2) && mainFlags.HolderPresent)){
-                            if(CSeconds >= pars.SlTime) i = pars.SlTemp;
+                            if(CSeconds >= pars.SlTime) i = pars.SlTemp * 2;
                         }
                         else{
-                            if(CMinutes >= pars.SlTime) i = pars.SlTemp;                            
+                            if(CMinutes >= pars.SlTime) i = pars.SlTemp * 2;                            
                         }
                     }
                     if(WakeHold && BTicks[1].n >= MENU_HOLD_TICKS) WakeLong = 1;
@@ -1141,7 +1142,7 @@ void MenuTasks(int powerLost){
                     if(pars.STBTime && (CMinutes >= pars.STBTime)) i = 0;
                     CTTemp = i;
 
-                    if(TempBeep && (CTTemp == TTemp) && (CTTemp == (DispTemp >> 5))){
+                    if(TempBeep && (CTTemp == TTemp) && ((CTTemp >> 1) == (DispTemp >> 5))){
                         BeepTicks = 2;
                         TempBeep = 0;
                     }

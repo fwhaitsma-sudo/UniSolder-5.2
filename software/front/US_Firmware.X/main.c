@@ -44,7 +44,7 @@ volatile mainflags_t mainFlags = {1, 1, 1, 0};
 volatile int CalCh;
 
 /****** PARAMETERS SAVED IN EEPROM WHEN POWER IS LOST**************************/
-volatile unsigned int   TTemp;                      //target temperature/2
+volatile unsigned int   TTemp;                      //target temperature in degrees C (set with 1 degree resolution)
 volatile pars_t         pars;
 /******************************************************************************/
 

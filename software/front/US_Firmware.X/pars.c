@@ -24,6 +24,7 @@ const unsigned char MenuOrder[] = {18,19,0,1,2,22,3,4,5,6,7,11,13,8,10,14,9,12,1
 
 char UserName[NAME_LEN + 1];
 char UserPin[PIN_LEN + 1];
+UINT8 TAltOdd;
 
 const t_ParDef ParDef[] = {
 //  NAME            DEF  MIN      MAX      IMMEDIATE SUFFIX STRINGS       DISPFUNC    
@@ -46,7 +47,7 @@ const t_ParDef ParDef[] = {
     {"     INPUT ",   0,       0,       5, 0,            0, 0,            0}, //15   
     {" CALIBRATE ",   0,       0,       0, 0,            0, 0,            0}, //16
     {" INST.INFO ",   0,       0,       0, 0,            0, 0,            0}, //17
-    {" TEMP.STEP ",   1,       1,      25, 0,            0, 0,            &ParDispTemp}, //18
+    {" TEMP.STEP ",   2,       1,      50, 0,            0, 0,            &ParDispDeg}, //18
     {" DISP.STEP ",   1,       1,       5, 0,            0, 0,            &ParDispDeg}, //19
     {"  ACT.IRON ",   0,       0,       1, 0,            0, 0,            0}, //20 not in menu
     {"  ALT.TEMP ", 150, MINTEMP, MAXTEMP, 0,            0, 0,            0}, //21 not in menu
@@ -194,16 +195,21 @@ void LoadPars(void)
     LoadName();
     LoadPin();
 
-    TTemp = 150;
+    TTemp = 300;                                    //degrees C; the log holds it in units of 2 C
     oldb = EEPRead(64 + 63, 0, 1);
     for(i = 0; i < 64; i++){
         b = EEPRead(i + 64, 0, 1);
         if((oldb == 0xFF) && (b >= MINTEMP) && (b <= MAXTEMP)){
-            TTemp = b;
+            TTemp = b * 2;
             break;
         }
         oldb = b;
     }
+    //the odd degree of the set temperatures is kept in its own byte
+    b = EEPRead(TFINE_EEP_ADDR, 0, 1);
+    if(b > 3) b = 0;
+    TTemp += b & 1;
+    TAltOdd = (b >> 1) & 1;
 }
 
 void SavePars(void)
@@ -223,10 +229,12 @@ void SavePars(void)
     }
     i &= 63;
     b = EEPRead(64 + i, 0, 1);
-    if(b != TTemp){
+    if(b != (UINT8)(TTemp >> 1)){
         EEPWriteImm(i + 64, 0xFF);
-        EEPWriteImm(((i + 1) & 63) + 64, TTemp);
+        EEPWriteImm(((i + 1) & 63) + 64, TTemp >> 1);
     }
+    b = (TTemp & 1) | ((TAltOdd & 1) << 1);
+    if(EEPRead(TFINE_EEP_ADDR, 0, 1) != b) EEPWriteImm(TFINE_EEP_ADDR, b);
 }
 
 #undef _PARS_C

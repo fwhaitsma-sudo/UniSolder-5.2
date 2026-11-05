@@ -58,7 +58,7 @@ void ProcessIO(){
                 }
                 TXP.Command=3;
                 TXP.LiveData.Ticks=IO_TICKS;
-                TXP.LiveData.CTTemp=CTTemp;                                 //
+                TXP.LiveData.CTTemp=CTTemp >> 1;                                 //
                 TXP.LiveData.CTemp=PIDVars[0].CTemp[0];                                //
                 TXP.LiveData.ADCTemp=PIDVars[0].ADCTemp[0];                            //
                 TXP.LiveData.TAvgF=PIDVars[0].TAvgF[0] >> ADCAVG;                        //

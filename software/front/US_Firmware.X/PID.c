@@ -283,7 +283,7 @@ void PID(int PIDStep) {
 
     if(PV->DestinationReached == 0 && WSL > 0){
         if(!PV->NoHeater && !PV->NoSensor && !PV->Starting && !PV->ShortCircuit){
-            w = CTTemp << 2;
+            w = CTTemp << 1;
             if( ((PV->TAvgP[0] >= w) && (PV->TAvgP[1] < w)) || ((PV->CTemp[0] >= w) && (PV->CTemp[1] < w)) ){
                 //Shut off the power when destination is reached in order to calculate waveshaping shape.
                 PV->WSDelta[0].cnt = WSL - 1;
@@ -308,7 +308,7 @@ void PID(int PIDStep) {
     
     //Delta is array with current and previous difference between set and current TAvgP, multiplied by 8
     PV->Delta[1] = PV->Delta[0];
-    PV->Delta[0] = CTTemp << 2;
+    PV->Delta[0] = CTTemp << 1;
     PV->Delta[0] -= PV->TAvgP[0];
     if(PV->Delta[0] > 511) PV->Delta[0] = 511;
     if(PV->Delta[0] < -511) PV->Delta[0] = -511;
