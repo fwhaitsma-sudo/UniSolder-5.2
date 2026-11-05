@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Text;
 using System.Windows.Forms;
+using System.ComponentModel;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Linq;
@@ -470,6 +471,8 @@ namespace SSControls
         private GScale[] _scales;
         private GDrawing[] _drawings;
 
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public bool ScaleOnResize
         {
             get { return _scaleonresize; }
@@ -487,11 +490,15 @@ namespace SSControls
             return _drawings[index];
         }
 
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public GDrawing[] Drawings1
         {
             get { return _drawings; }
         }
 
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public long ScaleNum
         {
             get
@@ -543,6 +550,8 @@ namespace SSControls
             }
         }
 
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public long DrawingsNum
         {
             get
