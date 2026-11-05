@@ -31,8 +31,31 @@ static T_MENU_MODE OldMode;
 static int CRstTemp;
 
 //reset temperature preset 0..3 (presets 1-3 are RTemp[], preset 4 is RTemp4)
-static UINT8 PresetTemp(int i){
-    return (i < 3) ? pars.RTemp[i] : pars.RTemp4;
+//T1-T4, HOLDER T and SLEEP T are set with 1 degree resolution: the byte in pars holds units of 2 C
+//and the odd degree is kept in ParOdd (see FineBit). The working value ("fine") is in degrees C.
+static int FineBit(int p){
+    switch(p){
+        case 0: return 0;
+        case 1: return 1;
+        case 2: return 2;
+        case 22: return 3;
+        case 3: return 4;
+        case 4: return 5;
+    }
+    return -1;
+}
+#define FINE_PAR(p) (FineBit(p) >= 0)
+static int ParFine(int p){
+    int k = FineBit(p);
+    return (k < 0) ? pars.b[p] : ((pars.b[p] << 1) + ((ParOdd >> k) & 1));
+}
+static void SetParFine(int p, int v){
+    int k = FineBit(p);
+    pars.b[p] = v >> 1;
+    if(v & 1) ParOdd |= (1 << k); else ParOdd &= ~(1 << k);
+}
+static int PresetFine(int i){
+    return ParFine((i < 3) ? i : 22);
 }
 static int CPar;
 static int CRow;
@@ -350,10 +373,10 @@ void OLEDTasks(int powerLost){
                             if(CRstTemp > 3)CRstTemp = 0;
                         }
                         for(i = 0; i < 4; i++){
-                            UINT8 t = PresetTemp(CRstTemp);
+                            int t = PresetFine(CRstTemp);
                             if(t){
-                                if(TTemp != (unsigned int)(t * 2)){
-                                    TTemp = t * 2;
+                                if(TTemp != (unsigned int)t){
+                                    TTemp = t;
                                     TempBeep = 1;
                                 }
                                 break;
@@ -424,10 +447,11 @@ void OLEDTasks(int powerLost){
                             }
                             if(CMode == SET_PARAMS){
                                 int q = MenuOrder[(UINT8)CPar];
-                                CParVal = pars.b[(UINT8)q];
+                                CParVal = ParFine(q);
                                 PresetArmed = 1;
                                 if(PRESET_PAR(q)){
-                                    PresetLastOn = CParVal ? CParVal : (pars.RTempMem[PRESET_SLOT(q)] ? pars.RTempMem[PRESET_SLOT(q)] : MINTEMP);
+                                    int sl = PRESET_SLOT(q);
+                                    PresetLastOn = CParVal ? CParVal : (pars.RTempMem[sl] ? ((pars.RTempMem[sl] << 1) + ((ParOdd >> (8 + sl)) & 1)) : MINTEMP * 2);
                                 }
                             }
                         }
@@ -439,8 +463,18 @@ void OLEDTasks(int powerLost){
                         int p = MenuOrder[CPar];
                         if(BTicks[1].n || EncDiff) ModeTicks = 250;
                         if(BTicks[1].o && (BTicks[1].n == 0)){ //confirm (release of the button)
-                            if(PRESET_PAR(p) && CParVal == 0) pars.RTempMem[PRESET_SLOT(p)] = PresetLastOn;
-                            pars.b[p] = CParVal;
+                            if(PRESET_PAR(p) && CParVal == 0){
+                                int sl = PRESET_SLOT(p);
+                                pars.RTempMem[sl] = PresetLastOn >> 1;
+                                if(PresetLastOn & 1) ParOdd |= (1 << (8 + sl)); else ParOdd &= ~(1 << (8 + sl));
+                            }
+                            if(FINE_PAR(p)){
+                                SetParFine(p, CParVal);
+                                SaveParOdd();
+                            }
+                            else{
+                                pars.b[p] = CParVal;
+                            }
                             PresetArmed = 1;
                             CMode = MENU;
                         }
@@ -462,9 +496,12 @@ void OLEDTasks(int powerLost){
                                 if(EncDiff < 0)CParVal--;
                                 EncDiff=0;
                                 //presets: 0 is OFF, otherwise the temperature starts at MINTEMP
-                                if(PRESET_PAR(p) && CParVal > 0 && CParVal < MINTEMP) CParVal = (dir > 0) ? MINTEMP : 0;
-                                if((CParVal < ParDef[p].Min))CParVal = ParDef[p].Max;
-                                if((CParVal > ParDef[p].Max))CParVal = ParDef[p].Min;
+                                {
+                                    int sc = FINE_PAR(p) ? 2 : 1;   //fine settings are edited in degrees, the table limits are in units of 2 C
+                                    if(PRESET_PAR(p) && CParVal > 0 && CParVal < MINTEMP * 2) CParVal = (dir > 0) ? MINTEMP * 2 : 0;
+                                    if((CParVal < ParDef[p].Min * sc))CParVal = ParDef[p].Max * sc;
+                                    if((CParVal > ParDef[p].Max * sc))CParVal = ParDef[p].Min * sc;
+                                }
                             }
                             if(PRESET_PAR(p) && CParVal != 0) PresetLastOn = CParVal;
                             if(ParDef[p].Immediate)pars.b[p] = CParVal;
@@ -740,7 +777,7 @@ void OLEDTasks(int powerLost){
         for(i=0; i < 4; i++){
             int p = MenuOrder[par];
             OLEDPrint816(0, i * 2, ParDef[(UINT8)MenuOrder[(UINT8)par]].Name, 11);
-            if(ParDef[p].OLEDDispFunc)(*ParDef[p].OLEDDispFunc)(p, 88, i * 2,  pars.b[p]);
+            if(ParDef[p].OLEDDispFunc)(*ParDef[p].OLEDDispFunc)(p, 88, i * 2,  ParFine(p));
             if(par == CPar){
                 if(CMode == MENU){
                     OLEDInvert(0, 128 - 44, i * 2, 2);
@@ -1098,7 +1135,7 @@ void MenuTasks(int powerLost){
                     }
                     
                     //a press that wakes the automatic sleep (SLEEP T) holds the heater off until it is released
-                    if(CMode == DEFAULT_MENU && BTicks[1].n == 1 && pars.SlTime && TTemp > (unsigned int)(pars.SlTemp * 2)){
+                    if(CMode == DEFAULT_MENU && BTicks[1].n == 1 && pars.SlTime && TTemp > (unsigned int)ParFine(4)){
                         if(((pars.Holder == 1) || ((pars.Holder == 2) && mainFlags.HolderPresent)) ? (CSeconds >= pars.SlTime) : (CMinutes >= pars.SlTime)){
                             WakeHold = 1;
                         }
@@ -1118,14 +1155,14 @@ void MenuTasks(int powerLost){
 
                     i = TTemp;
                     if(!FNAP){
-                        if(i > pars.HTemp * 2) i = pars.HTemp * 2;
+                        if(i > ParFine(3)) i = ParFine(3);
                     }
-                    if(pars.SlTime && (i > pars.SlTemp * 2)){
+                    if(pars.SlTime && (i > ParFine(4))){
                         if((pars.Holder == 1) || ((pars.Holder == 2) && mainFlags.HolderPresent)){
-                            if(CSeconds >= pars.SlTime) i = pars.SlTemp * 2;
+                            if(CSeconds >= pars.SlTime) i = ParFine(4);
                         }
                         else{
-                            if(CMinutes >= pars.SlTime) i = pars.SlTemp * 2;                            
+                            if(CMinutes >= pars.SlTime) i = ParFine(4);                            
                         }
                     }
                     if(WakeHold && BTicks[1].n >= MENU_HOLD_TICKS) WakeLong = 1;

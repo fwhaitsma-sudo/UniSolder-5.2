@@ -25,6 +25,7 @@ const unsigned char MenuOrder[] = {18,19,0,1,2,22,3,4,5,6,7,11,13,8,10,14,9,12,1
 char UserName[NAME_LEN + 1];
 char UserPin[PIN_LEN + 1];
 UINT8 TAltOdd;
+UINT16 ParOdd;
 
 const t_ParDef ParDef[] = {
 //  NAME            DEF  MIN      MAX      IMMEDIATE SUFFIX STRINGS       DISPFUNC    
@@ -100,12 +101,13 @@ void ParDispPreset(int par, int col, int row, int temp){
     }
 }
 
+//temp is in degrees C
 void ParDispTemp(int par, int col, int row, int temp){
     if(pars.Deg){
-        ParDispNum(par, col, row, ((temp * 461) >> 7) + 32);
+        ParDispNum(par, col, row, ((temp * 461) >> 8) + 32);
     }
     else{
-        ParDispNum(par, col, row, temp * 2);
+        ParDispNum(par, col, row, temp);
     }
     ParDispCF(par, col + 24, row, pars.Deg);
 }
@@ -169,9 +171,18 @@ void SavePin(void)
     }
 }
 
+//Writes the odd degrees of T1-T4, HOLDER T and SLEEP T to EEPROM at once (only the bytes that changed).
+void SaveParOdd(void)
+{
+    if(EEPRead(PAROD_EEP_ADDR, 0, 1) != PAROD_EEP_MARK) EEPWriteImm(PAROD_EEP_ADDR, PAROD_EEP_MARK);
+    if(EEPRead(PAROD_EEP_ADDR + 1, 0, 1) != (UINT8)(ParOdd & 0xFF)) EEPWriteImm(PAROD_EEP_ADDR + 1, ParOdd & 0xFF);
+    if(EEPRead(PAROD_EEP_ADDR + 2, 0, 1) != (UINT8)(ParOdd >> 8)) EEPWriteImm(PAROD_EEP_ADDR + 2, ParOdd >> 8);
+}
+
 void LoadPars(void)
 {
     int i;
+    int reset = 0;
     UINT8 b,oldb;
 
     EEPRead(0, (UINT8 *)&pars, sizeof(pars));
@@ -188,12 +199,27 @@ void LoadPars(void)
             for(i = 0; i < sizeof(pars.b); i++){
                 pars.b[i] = ParDef[i].Default;
             }
+            reset = 1;
             break;
         }
     }
 
     LoadName();
     LoadPin();
+
+    //odd degree of T1-T4, HOLDER T, SLEEP T and the OFF memories; only valid on a stored value below the maximum
+    ParOdd = 0;
+    if(!reset && (EEPRead(PAROD_EEP_ADDR, 0, 1) == PAROD_EEP_MARK)){
+        static const UINT8 fineIdx[6] = {0, 1, 2, 22, 3, 4};
+        ParOdd = EEPRead(PAROD_EEP_ADDR + 1, 0, 1) | (EEPRead(PAROD_EEP_ADDR + 2, 0, 1) << 8);
+        ParOdd &= 0x0F3F;
+        for(i = 0; i < 6; i++){
+            if((pars.b[fineIdx[i]] == 0) || (pars.b[fineIdx[i]] >= ParDef[fineIdx[i]].Max)) ParOdd &= ~(1 << i);
+        }
+        for(i = 0; i < 4; i++){
+            if((pars.RTempMem[i] == 0) || (pars.RTempMem[i] >= MAXTEMP)) ParOdd &= ~(1 << (8 + i));
+        }
+    }
 
     TTemp = 300;                                    //degrees C; the log holds it in units of 2 C
     oldb = EEPRead(64 + 63, 0, 1);

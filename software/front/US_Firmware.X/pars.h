@@ -65,6 +65,9 @@ typedef struct {
 
 #define TFINE_EEP_ADDR     50   //EEPROM: bit 0 = the set temperature is odd, bit 1 = the other iron's temperature is odd (stored values are in units of 2 C)
 
+#define PAROD_EEP_ADDR     51   //EEPROM: marker, then 2 bytes with the odd degree of T1-T4, HOLDER T, SLEEP T and the OFF memories (stored values are in units of 2 C)
+#define PAROD_EEP_MARK     0xA7
+
 #define NB_OF_MENU_PARAMS  (sizeof(MenuOrder) / sizeof(MenuOrder[0])
 
 #ifndef _PARS_C
@@ -74,6 +77,8 @@ extern char UserName[NAME_LEN + 1];  //name shown at power-up, empty = show the 
 extern void SaveName(void);
 extern char UserPin[PIN_LEN + 1];    //menu pincode, empty = no pincode
 extern void SavePin(void);
+extern UINT16 ParOdd;               //odd degree of T1-T4 (bits 0-3), HOLDER T (4), SLEEP T (5), memories of T1-T4 (bits 8-11)
+extern void SaveParOdd(void);
 extern UINT8 TAltOdd;                //two-iron adapter: the other iron's set temperature is odd (pars.TTempAlt holds it in units of 2 C)
 extern void LoadPars(void);
 extern void SavePars();
