@@ -754,30 +754,25 @@ void OLEDTasks(int powerLost){
         }        
     }
     
-    if(OLEDFlags.f.StandBy){
-        static int X, Y, DX, DY;
-        if(X <= 0) DX = 1;
-        if(Y <= 0) DY = 1;
-        if((DispTemp >> 4) > 60 && !PV1->NoHeater && !PV1->NoSensor && !PV1->ShortCircuit && !PV2->NoHeater && !PV2->NoSensor && !PV2->ShortCircuit){
-            if(X >= ((127 - 24) * 2)){
-                X = (127 - 24 )* 2;
-                DX = -1;
+    {
+        //screensaver: the text (18 characters x 6 pixels wide, 8 pixels high) jumps to a random position every 30 s
+        static UINT32 SaverSeed;
+        static int SaverTicks, SaverX, SaverY;
+        if(OLEDFlags.f.StandBy){
+            if(SaverTicks == 0){ //on entering standby and then every 30 s (about 50 calls per second)
+                SaverSeed = SaverSeed * 1664525UL + 1013904223UL + ISRTicks;
+                SaverX = (SaverSeed >> 16) % (128 - 108 + 1);
+                SaverSeed = SaverSeed * 1664525UL + 1013904223UL + DispTemp;
+                SaverY = (SaverSeed >> 16) % (64 - 8 + 1);
             }
-            if(Y >= ((63 - 16) * 2)){
-                Y = (63 - 16) * 2;
-                DY =- 1;                                    
-            }            
-            OLEDPrintXY816(X >> 1, Y >> 1, "HOT", 3);
+            if(++SaverTicks >= 1500) SaverTicks = 0;
+            OLEDPrintXY68(SaverX, SaverY, "ready when you are", 18);
         }
         else{
-            if(X >= ((127 - 18) * 2)) DX = -1;
-            if(Y >= ((63 - 8) * 2)) DY =- 1;                                    
-            OLEDPrintXY68(X >> 1, Y >> 1, "ZZZ", 3);
+            SaverTicks = 0;
         }
-        X += DX;
-        Y += DY;        
     }
-    
+
     if(OLEDFlags.f.Input){
         const char * StrEncoder[]   = {
             "KEYS", 
