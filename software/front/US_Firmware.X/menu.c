@@ -57,6 +57,34 @@ static void SetParFine(int p, int v){
 static int PresetFine(int i){
     return ParFine((i < 3) ? i : 22);
 }
+/******* Beeps: the pitch comes from the BEEP PITCH setting, all sounds can be turned off ****/
+//Tone frequency from Timer 3 (1:8 prescaler, 5 MHz) and output-compare 1 at 50% duty.
+static const UINT16 PitchHz[9] = {800, 1200, 1800, 2400, 3000, 3400, 3800, 4400, 5200};
+
+static void SoundFreq(UINT16 f){
+    UINT32 per = ((PER_FREQ / 8UL) + (f >> 1)) / f;
+    PR3 = per - 1;
+    OC1RS = per >> 1;
+    TMR3 = 0;
+}
+
+void SoundTick(void){
+    if(BeepTicks){
+        BeepTicks--;
+        if(pars.Sound){
+            if(!SPEAKER) SoundFreq(PitchHz[(pars.Pitch >= 1 && pars.Pitch <= 9) ? pars.Pitch - 1 : 6]);
+            SPKON;
+        }
+        else{
+            SPKOFF;
+        }
+    }
+    else{
+        SPKOFF;
+    }
+}
+/*****************************************************************************************/
+
 static int CPar;
 static int CRow;
 static int CParVal;
@@ -420,10 +448,10 @@ void OLEDTasks(int powerLost){
                                 case 17: //Instrument info
                                     CMode=INSTRUMENT_INFO;
                                     break;
-                                case 27: //Version info
+                                case 29: //Version info
                                     CMode=VERSION_INFO;
                                     break;
-                                case 29: //pincode
+                                case 31: //pincode
                                     {
                                         int k;
                                         for(k = 0; k < PIN_LEN; k++) PinBuf[k] = UserPin[k] ? UserPin[k] : '-';
@@ -432,7 +460,7 @@ void OLEDTasks(int powerLost){
                                         CMode=PIN_EDIT;
                                     }
                                     break;
-                                case 28: //name shown at power-up
+                                case 30: //name shown at power-up
                                     {
                                         int k;
                                         for(k = 0; k < NAME_LEN; k++) NameBuf[k] = UserName[k] ? UserName[k] : ' ';
@@ -505,6 +533,7 @@ void OLEDTasks(int powerLost){
                             }
                             if(PRESET_PAR(p) && CParVal != 0) PresetLastOn = CParVal;
                             if(ParDef[p].Immediate)pars.b[p] = CParVal;
+                            if(dir && p == 27) BeepTicks = 3;       //beep pitch: beep at the new pitch
                         }
                         OLEDFlags.f.Pars = 1;
                     }
@@ -1056,14 +1085,7 @@ void MenuTasks(int powerLost){
                 knobMoved = EncDiff;
                 OLEDTasks(0);
 
-                if(BeepTicks){
-                    BeepTicks--;
-                    SPKON;
-                }
-                else
-                {
-                    SPKOFF;
-                }
+                SoundTick();
                 
                 if(InvertTicks)InvertTicks--;                
                 
