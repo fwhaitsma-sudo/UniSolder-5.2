@@ -809,7 +809,12 @@ void OLEDTasks(int powerLost){
         if(par < 0) par += NB_OF_MENU_PARAMS);
         for(i=0; i < 4; i++){
             int p = MenuOrder[par];
-            OLEDPrint816(0, i * 2, ParDef[(UINT8)MenuOrder[(UINT8)par]].Name, 11);
+            {
+                //labels are left-aligned: skip the padding spaces of the (right-aligned) names in the table
+                const char * nm = ParDef[p].Name;
+                while(*nm == ' ') nm++;
+                OLEDPrint816(4, i * 2, nm, 10);
+            }
             if(ParDef[p].OLEDDispFunc)(*ParDef[p].OLEDDispFunc)(p, 88, i * 2,  ParFine(p));
             if(par == CPar){
                 if(CMode == MENU){
