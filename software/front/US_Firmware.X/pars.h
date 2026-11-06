@@ -40,8 +40,9 @@ typedef union {
         UINT8 RTempMem[4];                          //per preset: last temperature before it was set to OFF (restored when turned on again)
         UINT8 Pitch;                                //beep pitch (1-9)
         UINT8 Sound;                                //sounds (0 - off, 1 - on)
+        UINT8 Volume;                               //sound volume (1-5)
     };
-    UINT8 b[29];
+    UINT8 b[30];
 }pars_t;
 
 typedef struct {
@@ -73,8 +74,8 @@ typedef struct {
 #define NB_OF_MENU_PARAMS  (sizeof(MenuOrder) / sizeof(MenuOrder[0])
 
 #ifndef _PARS_C
-extern const char MenuOrder[25];
-extern const t_ParDef ParDef[32];
+extern const char MenuOrder[26];
+extern const t_ParDef ParDef[33];
 extern char UserName[NAME_LEN + 1];  //name shown at power-up, empty = show the logo
 extern void SaveName(void);
 extern char UserPin[PIN_LEN + 1];    //menu pincode, empty = no pincode

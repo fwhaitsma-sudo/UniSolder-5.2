@@ -61,10 +61,14 @@ static int PresetFine(int i){
 //Tone frequency from Timer 3 (1:8 prescaler, 5 MHz) and output-compare 1 at 50% duty.
 static const UINT16 PitchHz[9] = {800, 1200, 1800, 2400, 3000, 3400, 3800, 4400, 5200};
 
+//Volume 1-5 is the pulse width: a narrower pulse gives a weaker tone (about -20, -14, -8, -3 and 0 dB).
+static const UINT8 VolumeDuty[5] = {3, 6, 12, 25, 50};   //percent of the period
+
 static void SoundFreq(UINT16 f){
     UINT32 per = ((PER_FREQ / 8UL) + (f >> 1)) / f;
+    int v = (pars.Volume >= 1 && pars.Volume <= 5) ? pars.Volume : 5;
     PR3 = per - 1;
-    OC1RS = per >> 1;
+    OC1RS = (per * VolumeDuty[v - 1]) / 100;
     TMR3 = 0;
 }
 
@@ -448,10 +452,10 @@ void OLEDTasks(int powerLost){
                                 case 17: //Instrument info
                                     CMode=INSTRUMENT_INFO;
                                     break;
-                                case 29: //Version info
+                                case 30: //Version info
                                     CMode=VERSION_INFO;
                                     break;
-                                case 31: //pincode
+                                case 32: //pincode
                                     {
                                         int k;
                                         for(k = 0; k < PIN_LEN; k++) PinBuf[k] = UserPin[k] ? UserPin[k] : '-';
@@ -460,7 +464,7 @@ void OLEDTasks(int powerLost){
                                         CMode=PIN_EDIT;
                                     }
                                     break;
-                                case 30: //name shown at power-up
+                                case 31: //name shown at power-up
                                     {
                                         int k;
                                         for(k = 0; k < NAME_LEN; k++) NameBuf[k] = UserName[k] ? UserName[k] : ' ';
@@ -533,7 +537,7 @@ void OLEDTasks(int powerLost){
                             }
                             if(PRESET_PAR(p) && CParVal != 0) PresetLastOn = CParVal;
                             if(ParDef[p].Immediate)pars.b[p] = CParVal;
-                            if(dir && p == 27) BeepTicks = 3;       //beep pitch: beep at the new pitch
+                            if(dir && (p == 27 || p == 29)) BeepTicks = 3;   //beep pitch and volume: beep at the new setting
                         }
                         OLEDFlags.f.Pars = 1;
                     }
