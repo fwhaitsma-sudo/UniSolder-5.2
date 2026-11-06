@@ -57,6 +57,76 @@ static void SetParFine(int p, int v){
 static int PresetFine(int i){
     return ParFine((i < 3) ? i : 22);
 }
+/******* Sounds: beeps (pitch from the BEEP PITCH setting) and welcome melodies ************/
+//Tone frequency from Timer 3 (1:8 prescaler, 5 MHz) and output-compare 1 at 50% duty.
+typedef struct { UINT16 f; UINT8 d; } t_Note;   //frequency in Hz (0 = rest), duration in 20 ms ticks; d = 0 ends the melody
+
+static const UINT16 PitchHz[9] = {800, 1200, 1800, 2400, 3000, 3400, 3800, 4400, 5200};
+
+static const t_Note MelRise[] = {{523, 6}, {659, 6}, {784, 6}, {1047, 16}, {0, 0}};
+static const t_Note MelChime[] = {{784, 12}, {659, 12}, {698, 12}, {523, 26}, {0, 0}};
+static const t_Note MelJoy[] = {{659, 7}, {659, 7}, {698, 7}, {784, 7}, {784, 7}, {698, 7}, {659, 7}, {587, 7}, {523, 14}, {0, 0}};
+static const t_Note MelFanfare[] = {{784, 5}, {784, 5}, {784, 5}, {1047, 18}, {988, 5}, {1047, 26}, {0, 0}};
+static const t_Note * const Melodies[4] = {MelRise, MelChime, MelJoy, MelFanfare};
+
+static const t_Note * MelNote;      //next note of the melody being played (NULL = none)
+static int MelLeft;                 //ticks left of the current note
+
+static void SoundFreq(UINT16 f){
+    UINT32 per = ((PER_FREQ / 8UL) + (f >> 1)) / f;
+    PR3 = per - 1;
+    OC1RS = per >> 1;
+    TMR3 = 0;
+}
+
+void SoundPlay(int m){
+    if(!pars.Sound || m < 1 || m > 4) return;
+    MelNote = Melodies[m - 1];
+    MelLeft = 0;
+}
+
+int SoundBusy(void){
+    return MelNote != NULL;
+}
+
+void SoundTick(void){
+    if(MelNote){
+        if(MelLeft <= 0){
+            if(MelNote->d == 0){ //end of the melody
+                MelNote = NULL;
+                SPKOFF;
+                return;
+            }
+            if(MelNote->f) SoundFreq(MelNote->f);
+            MelLeft = MelNote->d;
+            MelNote++;
+        }
+        if(MelNote[-1].f && MelLeft > 1){ //the last tick of each note is silent
+            SPKON;
+        }
+        else{
+            SPKOFF;
+        }
+        MelLeft--;
+        if(BeepTicks) BeepTicks--;
+        return;
+    }
+    if(BeepTicks){
+        BeepTicks--;
+        if(pars.Sound){
+            if(!SPEAKER) SoundFreq(PitchHz[(pars.Pitch >= 1 && pars.Pitch <= 9) ? pars.Pitch - 1 : 6]);
+            SPKON;
+        }
+        else{
+            SPKOFF;
+        }
+    }
+    else{
+        SPKOFF;
+    }
+}
+/*****************************************************************************************/
+
 static int CPar;
 static int CRow;
 static int CParVal;
@@ -420,10 +490,10 @@ void OLEDTasks(int powerLost){
                                 case 17: //Instrument info
                                     CMode=INSTRUMENT_INFO;
                                     break;
-                                case 27: //Version info
+                                case 30: //Version info
                                     CMode=VERSION_INFO;
                                     break;
-                                case 29: //pincode
+                                case 32: //pincode
                                     {
                                         int k;
                                         for(k = 0; k < PIN_LEN; k++) PinBuf[k] = UserPin[k] ? UserPin[k] : '-';
@@ -432,7 +502,7 @@ void OLEDTasks(int powerLost){
                                         CMode=PIN_EDIT;
                                     }
                                     break;
-                                case 28: //name shown at power-up
+                                case 31: //name shown at power-up
                                     {
                                         int k;
                                         for(k = 0; k < NAME_LEN; k++) NameBuf[k] = UserName[k] ? UserName[k] : ' ';
@@ -505,6 +575,8 @@ void OLEDTasks(int powerLost){
                             }
                             if(PRESET_PAR(p) && CParVal != 0) PresetLastOn = CParVal;
                             if(ParDef[p].Immediate)pars.b[p] = CParVal;
+                            if(dir && p == 27) SoundPlay(CParVal);   //melody: play the one just selected
+                            if(dir && p == 28) BeepTicks = 3;       //beep pitch: beep at the new pitch
                         }
                         OLEDFlags.f.Pars = 1;
                     }
@@ -1056,14 +1128,7 @@ void MenuTasks(int powerLost){
                 knobMoved = EncDiff;
                 OLEDTasks(0);
 
-                if(BeepTicks){
-                    BeepTicks--;
-                    SPKON;
-                }
-                else
-                {
-                    SPKOFF;
-                }
+                SoundTick();
                 
                 if(InvertTicks)InvertTicks--;                
                 

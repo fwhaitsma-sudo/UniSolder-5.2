@@ -19,8 +19,9 @@ const char * StrResume[]    = {"OFF ", "KEY ", "HOLD", "BOTH"};
 const char * StrButtons[]   = {"+/- ", "-/+ "};
 const char * StrOffOnAuto[] = {"OFF ", "ON  ", "AUTO"};
 const char * StrMenuUp[]    = {"KEY+", "KEY-"};
+const char * StrMelody[]    = {"OFF ", "RISE", "CHIM", "JOY ", "FANF"};
 
-const unsigned char MenuOrder[] = {18,19,0,1,2,22,3,4,5,6,7,11,13,8,10,14,9,12,16,17,28,29,27};
+const unsigned char MenuOrder[] = {18,19,0,1,2,22,3,4,5,6,7,11,13,8,10,14,9,12,27,28,29,16,17,31,32,30};
 
 char UserName[NAME_LEN + 1];
 char UserPin[PIN_LEN + 1];
@@ -57,9 +58,12 @@ const t_ParDef ParDef[] = {
     {"   MEMORY  ",   0,       0, MAXTEMP, 0,            0, 0,            0}, //24 not in menu: T2 memory
     {"   MEMORY  ",   0,       0, MAXTEMP, 0,            0, 0,            0}, //25 not in menu: T3 memory
     {"   MEMORY  ",   0,       0, MAXTEMP, 0,            0, 0,            0}, //26 not in menu: T4 memory
-    {"   VERSION ",   0,       0,       0, 0,            0, 0,            0}, //27
-    {"      NAME ",   0,       0,       0, 0,            0, 0,            0}, //28 name shown at power-up
-    {"   PINCODE ",   0,       0,       0, 0,            0, 0,            0}, //29 menu pincode
+    {"    MELODY ",   0,       0,       4, 0,            0, StrMelody,    &ParDispStr}, //27 welcome melody, 0 = plain beep
+    {" BEEP PITCH",   7,       1,       9, 1,            0, 0,            &ParDispNum}, //28 beep pitch
+    {"     SOUND ",   1,       0,       1, 0,            0, StrOffOnAuto, &ParDispStr}, //29 sounds on/off
+    {"   VERSION ",   0,       0,       0, 0,            0, 0,            0}, //30
+    {"      NAME ",   0,       0,       0, 0,            0, 0,            0}, //31 name shown at power-up
+    {"   PINCODE ",   0,       0,       0, 0,            0, 0,            0}, //32 menu pincode
 };
 
 void ParDispStr(int par, int col, int row, int num){

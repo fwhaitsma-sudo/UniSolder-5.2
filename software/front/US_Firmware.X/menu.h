@@ -32,6 +32,9 @@ typedef enum{
 
 extern void MenuInit();
 extern void MenuTasks(int powerLost);
+extern void SoundTick(void);      //call every 20 ms: plays the beeps and the melody
+extern void SoundPlay(int m);     //start welcome melody m (1-4); does nothing when sounds are off
+extern int  SoundBusy(void);      //a melody is playing
 
 #ifdef	__cplusplus
 }

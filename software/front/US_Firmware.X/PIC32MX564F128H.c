@@ -121,7 +121,7 @@ void mcuInit2(){
     OLEDPrintNum68(0, 0, 2, 10);
     OLEDUpdate();
     
-    OpenTimer3(T3_ON | T3_IDLE_STOP | T3_GATE_OFF | T3_PS_1_256 | T3_SOURCE_INT, 40);
+    OpenTimer3(T3_ON | T3_IDLE_STOP | T3_GATE_OFF | T3_PS_1_8 | T3_SOURCE_INT, 1315);   //speaker tone: 5 MHz / 1316 = 3.8 kHz, set per sound by SoundTick()
     OLEDPrintNum68(0, 0, 2, 11);
     OLEDUpdate();
     

@@ -185,7 +185,8 @@ int main(void){
     OLEDPrintNum68(0, 0, 2, 48);
     OLEDUpdate();
     
-    BeepTicks = 2;
+    if(pars.Melody && pars.Sound) SoundPlay(pars.Melody);   //welcome melody, otherwise the plain beep
+    else BeepTicks = 2;
 
     OLEDFill(0, 12, 0, 1, 0);
     OLEDUpdate();
@@ -195,11 +196,16 @@ int main(void){
         for(i = 0; i < 100; i++){
             if(!B2) held = 0;
             _delay_ms(10);
+            if(i & 1) SoundTick();
         }
         if(held){
             for(i = 0; i <= PIN_LEN; i++) UserPin[i] = 0;
             SavePin();
             BeepTicks = 6;
+        }
+        for(i = 0; SoundBusy() && (i < 150); i++){   //let the welcome melody finish (at most 3 s more)
+            _delay_ms(20);
+            SoundTick();
         }
     }
 
