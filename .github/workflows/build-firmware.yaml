@@ -23,6 +23,14 @@ jobs:
         with:
           project: software/front/US_Firmware.X
           configuration: PIC32_with_bootloader
+      # Print the memory use of the build (from the linker map) as a notice on the run
+      - name: Memory usage
+        continue-on-error: true
+        run: |
+          map=$(ls software/front/US_Firmware.X/dist/PIC32_with_bootloader/production/*.map | head -n 1)
+          echo "map file: $map"
+          grep -n -i -A14 "Memory Usage Report" "$map" | head -40 || true
+          grep -i "memory used\|data memory\|program memory" "$map" | head -12 | while read -r l; do echo "::notice title=memory::$l"; done
       # Archive the build output
       - name: Archive build output
         uses: actions/upload-artifact@v4
