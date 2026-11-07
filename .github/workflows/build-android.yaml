@@ -1,0 +1,56 @@
+name: Build Android app
+on:
+  workflow_dispatch:
+  push:
+    branches: [android-app]   # test branch: every push builds the APK
+    paths:
+      - 'software/Android/**'
+      - '.github/workflows/build-android.yaml'
+
+permissions:
+  contents: write   # to publish the release
+
+jobs:
+  build:
+    name: Build UniSolder Android app
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download source
+        uses: actions/checkout@v4
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build APK
+        working-directory: software/Android
+        run: |
+          set +e
+          gradle --no-daemon --stacktrace -PbuildNumber=${{ github.run_number }} assembleDebug 2>&1 | tee build.log
+          rc=${PIPESTATUS[0]}
+          # show the compiler errors as annotations: the raw log is not easy to get at
+          grep -E '^e: |error:|What went wrong' -A2 build.log | head -40 | sed 's/%/%25/g' | while IFS= read -r line; do echo "::error::$line"; done
+          exit $rc
+      - name: Archive APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: UniSolder-android
+          path: software/Android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+      # Builds of the default branch are also published as a GitHub Release with the APK to install
+      - name: Publish release
+        if: github.ref_name == github.event.repository.default_branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          apk=$(ls software/Android/app/build/outputs/apk/debug/*.apk | head -n 1)
+          tag="android-$(date -u +%Y%m%d-%H%M)-$(echo $GITHUB_SHA | cut -c1-7)"
+          cp "$apk" "UniSolder-android-$tag.apk"
+          gh release create "$tag" "UniSolder-android-$tag.apk" \
+            --title "Android app $tag" \
+            --notes "Android app built from commit $GITHUB_SHA on ${GITHUB_REF_NAME}. Install the .apk on a phone with USB host (OTG) support; allow installing from unknown sources." \
+            --target "$GITHUB_SHA"
