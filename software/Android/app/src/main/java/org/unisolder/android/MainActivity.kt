@@ -491,7 +491,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
         }
     }
 
-    private fun setProgress(done: Int) {
+    private fun showProgress(done: Int) {
         runOnUiThread { fwProgress.progress = done }
     }
 
@@ -559,7 +559,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
                     nonZero++
                     if (nonZero <= 10) AppLog.warn("Bootloader status 0x" + st.toString(16) + " programming 0x" + r.address.toString(16).uppercase() + " (log only)")
                 }
-                if (done % 10 == 0 || done == h.records.size) setProgress(done)
+                if (done % 10 == 0 || done == h.records.size) showProgress(done)
             }
             AppLog.info("Firmware update: $done records programmed, $nonZero with non-zero bootloader status (log only)")
 
