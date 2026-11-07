@@ -41,16 +41,18 @@ jobs:
           name: UniSolder-android
           path: software/Android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
-      # Builds of the default branch are also published as a GitHub Release with the APK to install
+      # Every build is published as a GitHub Release with the APK, so it can be downloaded on the phone.
+      # Builds of other branches than the default one are marked as pre-release.
       - name: Publish release
-        if: github.ref_name == github.event.repository.default_branch
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           apk=$(ls software/Android/app/build/outputs/apk/debug/*.apk | head -n 1)
           tag="android-$(date -u +%Y%m%d-%H%M)-$(echo $GITHUB_SHA | cut -c1-7)"
           cp "$apk" "UniSolder-android-$tag.apk"
-          gh release create "$tag" "UniSolder-android-$tag.apk" \
+          pre=""
+          if [ "$GITHUB_REF_NAME" != "${{ github.event.repository.default_branch }}" ]; then pre="--prerelease"; fi
+          gh release create "$tag" "UniSolder-android-$tag.apk" $pre \
             --title "Android app $tag" \
             --notes "Android app built from commit $GITHUB_SHA on ${GITHUB_REF_NAME}. Install the .apk on a phone with USB host (OTG) support; allow installing from unknown sources." \
             --target "$GITHUB_SHA"
