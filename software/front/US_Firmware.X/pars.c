@@ -5,6 +5,7 @@
 #include "pars.h"
 #include "isr.h"
 #include "EEP.h"
+#include <string.h>
 
 void ParDispStr(int par, int col, int row, int num);
 void ParDispNum(int par, int col, int row, int num);
@@ -64,13 +65,35 @@ const t_ParDef ParDef[] = {
     {"   PINCODE ",   0,       0,       0, 0,            0, 0,            0}, //31 menu pincode
 };
 
+//All values are right-aligned to the right edge of the display (the col argument is not used).
+#define VAL_RIGHT 128
+
+UINT8 ParShowUnit;      //1 while the value being edited is drawn: temperatures then show their unit
+
+//degree sign and C/F: 12 pixels
+static void ParUnitCF(int row, int deg){
+    OLEDWrite(VAL_RIGHT - 12, 4, row, (void *)degrees4x16, 8);
+    OLEDPrint816(VAL_RIGHT - 8, row, deg ? "F" : "C", 0);
+}
+
+//number of up to 3 digits; for temperatures the unit only follows it while editing
+static void ParNumUnit(int row, int val, int withUnit){
+    OLEDPrintNum816(VAL_RIGHT - 24 - (withUnit ? 12 : 0), row, 3, val);
+    if(withUnit) ParUnitCF(row, pars.Deg);
+}
+
 void ParDispStr(int par, int col, int row, int num){
-    OLEDPrint816(col, row, ParDef[par].Strings[num], 0);
+    const char * s = ParDef[par].Strings[num];
+    int n = strlen(s);
+    while(n > 0 && s[n - 1] == ' ') n--;     //the table pads the texts to 4 characters
+    OLEDPrint816(VAL_RIGHT - 8 * n, row, s, n);
 }
 
 void ParDispNum(int par, int col, int row, int num){
-    OLEDPrintNum816(col, row, 3, num);
-    if(ParDef[par].Suffix) OLEDPrint816(col + 24, row, ParDef[par].Suffix, 0);
+    int w = 24;
+    if(ParDef[par].Suffix) w += 8;
+    OLEDPrintNum816(VAL_RIGHT - w, row, 3, num);
+    if(ParDef[par].Suffix) OLEDPrint816(VAL_RIGHT - 8, row, ParDef[par].Suffix, 0);
 }
 
 void ParDispNumOff(int par, int col, int row, int num){
@@ -78,25 +101,24 @@ void ParDispNumOff(int par, int col, int row, int num){
         ParDispNum(par, col, row, num);
     }
     else{
-        OLEDPrint816(col, row, StrOffOnAuto[0], 0);
+        OLEDPrint816(VAL_RIGHT - 24, row, "OFF", 3);
     }
 }
 
+//the DEGREES setting itself: C or F
 void ParDispCF(int par, int col, int row, int num){
-    OLEDWrite(col, 4, row, (void *)degrees4x16, 8);
-    OLEDPrint816(col + 4, row, num ? "F" : "C", 0);
+    ParUnitCF(row, num);
 }
 
-// Plain number of degrees followed by the degree sign and C/F (used for DISP.STEP)
+// Plain number of degrees (used for TEMP.STEP and DISP.STEP); the unit shows while editing
 void ParDispDeg(int par, int col, int row, int num){
-    ParDispNum(par, col, row, num);
-    ParDispCF(par, col + 24, row, pars.Deg);
+    ParNumUnit(row, num, ParShowUnit);
 }
 
 //preset: 0 means OFF (the slot is skipped when cycling the presets)
 void ParDispPreset(int par, int col, int row, int temp){
     if(temp == 0){
-        OLEDPrint816(col, row, StrOffOnAuto[0], 0);
+        OLEDPrint816(VAL_RIGHT - 24, row, "OFF", 3);
     }
     else{
         ParDispTemp(par, col, row, temp);
@@ -105,13 +127,7 @@ void ParDispPreset(int par, int col, int row, int temp){
 
 //temp is in degrees C
 void ParDispTemp(int par, int col, int row, int temp){
-    if(pars.Deg){
-        ParDispNum(par, col, row, ((temp * 461) >> 8) + 32);
-    }
-    else{
-        ParDispNum(par, col, row, temp);
-    }
-    ParDispCF(par, col + 24, row, pars.Deg);
+    ParNumUnit(row, pars.Deg ? (((temp * 461) >> 8) + 32) : temp, ParShowUnit);
 }
 
 //Reads the power-up name from EEPROM. Without the marker byte, or with anything

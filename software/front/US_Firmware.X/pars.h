@@ -82,6 +82,7 @@ extern void SavePin(void);
 extern UINT16 ParOdd;               //odd degree of T1-T4 (bits 0-3), HOLDER T (4), SLEEP T (5), memories of T1-T4 (bits 8-11)
 extern void SaveParOdd(void);
 extern UINT8 TAltOdd;                //two-iron adapter: the other iron's set temperature is odd (pars.TTempAlt holds it in units of 2 C)
+extern UINT8 ParShowUnit;            //set while the value being edited is drawn: temperatures then show their unit
 extern void LoadPars(void);
 extern void SavePars();
 #endif
