@@ -12,7 +12,7 @@ Only what is in the firmware now is listed. Reverted and superseded changes are 
 - **Set temperature per degree:** the set temperature is kept in whole degrees. TEMP.STEP is the knob step in degrees (1–50, default 2), so it can match DISP.STEP. T1–T4, HOLDER T and SLEEP T are also edited and shown in degrees (1 degree steps). The control itself is unchanged. The odd degree is stored in separate EEPROM bytes, so existing settings load as before. After flashing, choose TEMP.STEP again: an old value of 5 used to mean 10 °C.
 - **Beep pitch and sound on/off:** a SND PITCH menu item (1–9, about 800 Hz to 5.2 kHz, default 7, close to the old fixed tone) sets the pitch of all beeps, with a test beep when it is changed. A SOUND menu item turns all beeps off or on and comes before SND PITCH in the menu. The settings are saved with the others.
 - **Left-aligned menu labels:** every label in the settings menu starts at the same position, instead of being right-aligned against the value column. Labels are at most 10 characters so they fit the label area.
-- **Right-aligned menu values:** the values in the settings menu end at the same right edge, and the unit (°C, s, ...) is only shown while a value is being edited, so the list is less cluttered.
+- **Right-aligned menu values:** the values in the settings menu end at the same right edge, with the degree unit (°C or °F) right behind temperatures and degree steps.
 - **Faster display refresh:** only rows that changed are sent to the screen. Fill and invert are faster. (e65ddb1)
 
 ## Buttons and holds
@@ -44,3 +44,12 @@ Only what is in the firmware now is listed. Reverted and superseded changes are 
 - **Build from the solution file** (`UniSolder.sln`, Release). (a242419)
 - **No ClickOnce manifest signing**, so the build succeeds on the CI machine. (3afd75c)
 - **.NET 10 build:** the Windows application is migrated to .NET 10 (SDK-style projects, HidSharp instead of the old USB layer), with USB communication fixes. A separate workflow, "Windows Unisolder application (.NET 10)", publishes a single-file exe that runs without installing .NET. (68e7b9f)
+
+## Android application
+
+- **Android version of the Windows application** (`software/Android`, needs a phone with USB host / OTG): connects to the station over USB and has three tabs. *Live* shows a scrolling temperature chart (set temperature, actual temperature, duty, power, reached, filtered and ADC, each switchable, with pause). *PID* reads and sets Kp, Ki, DGain, OVFGain and Gain. *Firmware* checks a `.hex` file and updates the station through the bootloader, with a confirmation and a progress bar.
+- **Build:** the workflow "Build Android app" builds the APK and publishes it as a GitHub Release. Builds are signed with a fixed key so each can be installed over the previous one.
+
+## Build workflows
+
+- **Firmware test builds:** a push to any branch other than `display-step` that changes the firmware builds it automatically (artifact only). Builds of `display-step` are started by hand and publish the release with the `.hex`.
