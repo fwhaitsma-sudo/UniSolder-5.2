@@ -817,10 +817,8 @@ void OLEDTasks(int powerLost){
                     OLEDInvert(0, 128 - 44, i * 2, 2);
                 }
                 if(CMode == SET_PARAMS){
-                    OLEDFill(88, 40, i * 2, 2, 0);          //clear the value, draw it again with its unit
-                    ParShowUnit = 1;
+                    OLEDFill(88, 40, i * 2, 2, 0);          //clear the value, draw it again with the value being edited
                     if(ParDef[p].OLEDDispFunc)(*ParDef[p].OLEDDispFunc)(p, 88, i * 2,  CParVal);
-                    ParShowUnit = 0;
                     OLEDInvert(128 - 44, 44, i * 2, 2);
                 }
             }
