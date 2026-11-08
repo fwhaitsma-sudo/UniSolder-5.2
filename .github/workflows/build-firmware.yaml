@@ -1,6 +1,12 @@
 name: Build Unisolder firmware
 on: 
   workflow_dispatch:
+  # Test branches build on every push of firmware code (no release); display-step is built by hand and published
+  push:
+    branches-ignore: [display-step]
+    paths:
+      - 'software/front/**'
+      - '.github/workflows/build-firmware.yaml'
 
 permissions:
   contents: write   # to publish the release
