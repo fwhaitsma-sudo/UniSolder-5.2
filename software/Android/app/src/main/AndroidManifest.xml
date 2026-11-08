@@ -7,7 +7,7 @@
 
     <application
         android:allowBackup="false"
-        android:icon="@drawable/ic_launcher"
+        android:icon="@mipmap/ic_launcher"
         android:label="UniSolder"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
 
