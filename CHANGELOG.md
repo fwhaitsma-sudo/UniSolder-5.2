@@ -48,6 +48,7 @@ Only what is in the firmware now is listed. Reverted and superseded changes are 
 ## Android application
 
 - **Android version of the Windows application** (`software/Android`, needs a phone with USB host / OTG): connects to the station over USB and has three tabs. *Live* shows a scrolling temperature chart (set temperature, actual temperature, duty, power, reached, filtered and ADC, each switchable, with pause). *PID* reads and sets Kp, Ki, DGain, OVFGain and Gain. *Firmware* checks a `.hex` file and updates the station through the bootloader, with a confirmation and a progress bar.
+- **App icon:** a yellow U that bends into a temperature curve up to a dashed set-temperature line.
 - **Build:** the workflow "Build Android app" builds the APK and publishes it as a GitHub Release. Builds are signed with a fixed key so each can be installed over the previous one.
 
 ## Build workflows
