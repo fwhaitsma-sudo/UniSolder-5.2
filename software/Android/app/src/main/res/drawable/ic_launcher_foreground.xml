@@ -8,8 +8,10 @@
     <group
         android:pivotX="54"
         android:pivotY="54"
-        android:scaleX="0.86"
-        android:scaleY="0.86">
+        android:scaleX="1.0"
+        android:scaleY="1.0"
+        android:translateX="-2"
+        android:translateY="1">
         <!-- set temperature -->
         <path
             android:pathData="M43.5,34 L45,34 M49.5,34 L51,34 M55.5,34 L57,34 M61.5,34 L63,34 M67.5,34 L69,34 M73.5,34 L75,34"
