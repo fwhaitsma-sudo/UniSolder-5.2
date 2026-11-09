@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- A "U" that bends into a temperature curve and ends in a hot dot, below the dashed set-temperature line -->
+<!-- A yellow "U" that bends into a temperature curve up to the dashed set-temperature line -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
@@ -20,17 +20,10 @@
         <!-- the U that turns into the temperature curve -->
         <path
             android:pathData="M32,34 L32,58 A20,20 0 0 0 72,58 C72,44 74,38 78,34"
-            android:strokeColor="#FF7043"
+            android:strokeColor="#FFC107"
             android:strokeWidth="9"
             android:strokeLineCap="round"
             android:strokeLineJoin="round"
             android:fillColor="#00000000" />
-        <!-- hot dot -->
-        <path
-            android:fillColor="#FFCA28"
-            android:pathData="M78.5,34 a5.5,5.5 0 1,0 11,0 a5.5,5.5 0 1,0 -11,0" />
-        <path
-            android:fillColor="#FFF8E1"
-            android:pathData="M81.7,34 a2.3,2.3 0 1,0 4.6,0 a2.3,2.3 0 1,0 -4.6,0" />
     </group>
 </vector>
