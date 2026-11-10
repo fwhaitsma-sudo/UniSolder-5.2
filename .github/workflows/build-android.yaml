@@ -2,7 +2,7 @@ name: Build Android app
 on:
   workflow_dispatch:
   push:
-    branches: [android-app]   # test branch: every push builds the APK
+    branches: [android-app, remote-control]   # test branch: every push builds the APK
     paths:
       - 'software/Android/**'
       - '.github/workflows/build-android.yaml'
