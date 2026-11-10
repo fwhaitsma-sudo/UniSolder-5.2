@@ -249,6 +249,70 @@ static void SwitchIron(void){
     BeepTicks = 6;
 }
 
+//---- Remote control over USB: the same state and limits as the knob and the buttons ----
+static void RemoteTouch(void){      //a remote command counts as user activity for the sleep timers
+    CTicks = 0;
+    CSeconds = 0;
+    CMSeconds = 0;
+    CMinutes = 0;
+}
+
+unsigned int RemoteSetTemp(unsigned int t){
+    if(t < MINTEMP * 2) t = MINTEMP * 2;
+    if(t > MAXTEMP * 2) t = MAXTEMP * 2;
+    if(TTemp != t){
+        TTemp = t;
+        TempBeep = 1;
+    }
+    RemoteTouch();
+    return TTemp;
+}
+
+unsigned int RemotePreset(int i){
+    int t;
+    if(i < 0 || i > 3) return TTemp;
+    t = PresetFine(i);
+    if(t) return RemoteSetTemp(t);
+    return TTemp;
+}
+
+int RemoteSleep(int sleep){
+    if(sleep){
+        if(CMode == DEFAULT_MENU || CMode == SET_TEMPERATURE || CMode == RESET_TEMPERATURE){
+            ManualSleep = 1;
+            SleepNAP = FNAP;
+            CMode = STANDBY;
+            ModeTicks = 255;
+            BeepTicks = 12;
+        }
+    }
+    else if(CMode == STANDBY){
+        ManualSleep = 0;
+        CTTemp = TTemp;
+        RemoteTouch();
+        CMode = DEFAULT_MENU;
+        BeepTicks = 2;
+    }
+    return CMode == STANDBY;
+}
+
+int RemoteSwitchIron(void){
+    if(IronPairActive() && (CMode == DEFAULT_MENU || CMode == SET_TEMPERATURE || CMode == RESET_TEMPERATURE)) SwitchIron();
+    return pars.ActIron;
+}
+
+void RemoteGetState(RemoteState * s){
+    int i;
+    s->Set = TTemp;
+    s->Target = CTTemp;
+    for(i = 0; i < 4; i++) s->Preset[i] = PresetFine(i);
+    s->Holder = ParFine(3);
+    s->Sleep = ParFine(4);
+    s->Mode = (unsigned char)CMode;
+    s->Flags = (ManualSleep ? 1 : 0) | ((CMode == STANDBY) ? 2 : 0) | (IronPairActive() ? 4 : 0) | (mainFlags.HolderPresent ? 8 : 0) | (pars.Deg ? 16 : 0);
+    s->ActIron = pars.ActIron;
+}
+
 void OLEDTasks(int powerLost){
     int dual = IronPars.Config[1].SensorConfig.Type;
     t_PIDVars * PV1 = (t_PIDVars *)&PIDVars[0];
