@@ -7,7 +7,7 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.view.View
 
-/** Scrolling chart of the live data, the newest sample at the right edge. Vertical axis 0..500 degrees C. */
+/** Scrolling chart of the live data, the newest sample at the right edge. Vertical axis 0..500 degrees C; the power line uses the same axis with 100% at the top. */
 class ChartView(ctx: Context) : View(ctx) {
     class Series(val name: String, val color: Int, var visible: Boolean) {
         val data = FloatArray(CAPACITY)
@@ -16,8 +16,8 @@ class ChartView(ctx: Context) : View(ctx) {
     val series = listOf(
         Series("Set", Color.rgb(255, 82, 82), true),
         Series("Temp", Color.rgb(105, 240, 174), true),
-        Series("Duty", Color.rgb(255, 202, 40), true),
-        Series("Power", Color.rgb(64, 196, 255), false),
+        Series("Power", Color.rgb(255, 202, 40), true),
+        Series("Heater on", Color.rgb(64, 196, 255), false),
         Series("Reached", Color.rgb(186, 104, 200), false),
         Series("Filtered", Color.rgb(255, 138, 101), false),
         Series("ADC", Color.rgb(200, 200, 200), false)

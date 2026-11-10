@@ -3,6 +3,8 @@ package org.unisolder.android
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
+import android.content.res.ColorStateList
+import android.graphics.Color
 import android.graphics.Typeface
 import android.os.Bundle
 import android.os.Handler
@@ -41,6 +43,8 @@ class MainActivity : Activity(), DeviceLink.Listener {
 
     // live page
     private lateinit var readout: TextView
+    private lateinit var powerText: TextView
+    private lateinit var powerBar: ProgressBar
     private lateinit var chart: ChartView
     private lateinit var pauseButton: Button
     private var paused = false
@@ -190,6 +194,30 @@ class MainActivity : Activity(), DeviceLink.Listener {
         readout.setPadding(dp(4), dp(4), dp(4), dp(4))
         page.addView(readout)
 
+        // heater power: 100% is the heater on all the time
+        val powerRow = LinearLayout(this)
+        powerRow.orientation = LinearLayout.HORIZONTAL
+        powerRow.gravity = Gravity.CENTER_VERTICAL
+        powerRow.setPadding(dp(4), 0, dp(4), dp(4))
+        val powerLabel = TextView(this)
+        powerLabel.text = "Heater"
+        powerLabel.textSize = 16f
+        powerRow.addView(powerLabel)
+        powerBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal)
+        powerBar.max = 100
+        powerBar.progressTintList = ColorStateList.valueOf(Color.rgb(255, 193, 7))
+        val barParams = LinearLayout.LayoutParams(0, dp(14), 1f)
+        barParams.setMargins(dp(10), 0, dp(10), 0)
+        powerRow.addView(powerBar, barParams)
+        powerText = TextView(this)
+        powerText.textSize = 18f
+        powerText.typeface = Typeface.MONOSPACE
+        powerText.minWidth = dp(64)
+        powerText.gravity = Gravity.END
+        powerText.text = "—"
+        powerRow.addView(powerText)
+        page.addView(powerRow)
+
         chart = ChartView(this)
         page.addView(chart, LinearLayout.LayoutParams(MATCH, 0, 1f))
 
@@ -324,15 +352,21 @@ class MainActivity : Activity(), DeviceLink.Listener {
             if (!link.busy) loadPid()
         } else {
             readout.text = "No data"
+            powerBar.progress = 0
+            powerText.text = "\u2014"
             applyPid(null)
         }
     }
 
     override fun onLive(s: Sample) {
         if (paused) return
-        chart.add(floatArrayOf(s.set, s.temp, s.duty, s.power, s.reached, s.avg, s.adc))
+        // duty 512 = heater on all the time
+        val power = (s.duty * 100f / 512f).coerceIn(0f, 100f)
+        chart.add(floatArrayOf(s.set, s.temp, power * 5f, s.power, s.reached, s.avg, s.adc))
         if (++sampleCount % 5 == 0) {
-            readout.text = String.format(Locale.US, "Set %.0f°C    Actual %.0f°C", s.set, s.temp)
+            readout.text = String.format(Locale.US, "Set %.0f\u00B0C    Actual %.0f\u00B0C", s.set, s.temp)
+            powerBar.progress = Math.round(power)
+            powerText.text = String.format(Locale.US, "%.0f%%", power)
         }
     }
 
