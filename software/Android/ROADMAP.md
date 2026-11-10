@@ -22,8 +22,8 @@ Update this file and commit after each finished item, so a new session can conti
 - [ ] 5. User test of the firmware on hardware (needs the app Control tab, item 6), then changelog
 
 ### App (`software/Android`)
-- [ ] 6. DeviceLink: new commands; Control tab (set temp, presets, sleep/wake, info)
-- [ ] 7. Settings backup/restore (file on the phone)
+- [x] 6. DeviceLink: new commands; Control tab (set temp, presets, sleep/wake, switch iron, info) (ControlPage.kt; builds OK, untested on hardware)
+- [x] 7. Settings backup/restore (file on the phone; BackupFile in ControlPage.kt; untested on hardware)
 - [ ] 8. Session logging with CSV export
 - [ ] 9. Tip health: heater resistance chart + trend
 - [ ] 10. Alerts (target reached, stays above set temperature) and bench dashboard (big landscape view)
@@ -46,4 +46,5 @@ Update this file and commit after each finished item, so a new session can conti
 - Temperatures: TTemp is in whole degrees C (MINTEMP/MAXTEMP are 2 C units: limits 100..450 C). The live-data set temperature is TTemp/2 per byte, so the app shows it in 2 C steps.
 
 ## Log
+- 2026-11-10 (later): Control tab + backup/restore built (app commit c596c0d). Firmware test builds of `remote-control` are published as pre-releases `fw-rc-*`, app builds as `android-*` pre-releases.
 - 2026-11-10: roadmap created. Firmware commands implemented and built (commit 32ad428, build OK).
