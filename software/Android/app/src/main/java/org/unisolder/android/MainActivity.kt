@@ -38,6 +38,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
 
     private lateinit var statusText: TextView
     private lateinit var connectButton: Button
+    private lateinit var controlPage: ControlPage
     private val pages = ArrayList<View>()
     private val tabs = ArrayList<Button>()
 
@@ -114,6 +115,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
     }
 
     override fun onDestroy() {
+        controlPage.destroy()
         AppLog.listener = null
         link.listener = null
         link.stop()
@@ -155,13 +157,15 @@ class MainActivity : Activity(), DeviceLink.Listener {
         val content = FrameLayout(this)
         root.addView(content, LinearLayout.LayoutParams(MATCH, 0, 1f))
         pages.add(buildLivePage())
+        controlPage = ControlPage(this, link, io)
+        pages.add(controlPage.view)
         pages.add(buildPidPage())
         pages.add(buildFirmwarePage())
         for (p in pages) content.addView(p, FrameLayout.LayoutParams(MATCH, MATCH))
 
         val tabBar = LinearLayout(this)
         tabBar.orientation = LinearLayout.HORIZONTAL
-        val names = listOf("Live", "PID", "Firmware")
+        val names = listOf("Live", "Control", "PID", "Firmware")
         for (i in names.indices) {
             val b = Button(this)
             b.text = names[i]
@@ -181,6 +185,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
             pages[i].visibility = if (i == index) View.VISIBLE else View.GONE
             tabs[i].alpha = if (i == index) 1f else 0.55f
         }
+        if (::controlPage.isInitialized) controlPage.setActive(index == 1)
     }
 
     private fun buildLivePage(): View {
@@ -349,8 +354,12 @@ class MainActivity : Activity(), DeviceLink.Listener {
         connectButton.visibility = if (connected) View.GONE else View.VISIBLE
         if (connected) {
             chart.clear()
-            if (!link.busy) loadPid()
+            if (!link.busy) {
+                loadPid()
+                controlPage.onConnected()
+            }
         } else {
+            controlPage.onDisconnected()
             readout.text = "No data"
             powerBar.progress = 0
             powerText.text = "\u2014"
@@ -435,6 +444,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (controlPage.onActivityResult(requestCode, resultCode, data)) return
         if (requestCode == REQ_HEX && resultCode == RESULT_OK) {
             val uri = data?.data ?: return
             var name = "firmware.hex"

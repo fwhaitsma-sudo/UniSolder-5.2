@@ -33,7 +33,37 @@ class Pid(
     var ovsGain: Int
 )
 
+/** Answer of the application info command. protocol >= 1 means the firmware supports remote control and settings backup. */
+class AppInfo(val minor: Int, val major: Int, val board: Int, val protocol: Int) {
+    val boardName: String get() = if (board == 1) "5.2C" else "5.2"
+}
+
+/** State of the station: temperatures in degrees C (0 = OFF for presets, 0 = heater off for target). */
+class DeviceState(
+    val set: Int,
+    val target: Int,
+    val presets: IntArray,
+    val holder: Int,
+    val sleep: Int,
+    val min: Int,
+    val max: Int,
+    val mode: Int,
+    val flags: Int,
+    val actIron: Int,
+    val tempStep: Int
+) {
+    val manualSleep: Boolean get() = flags and 1 != 0
+    val standby: Boolean get() = flags and 2 != 0
+    val twoIrons: Boolean get() = flags and 4 != 0
+    val onStand: Boolean get() = flags and 8 != 0
+    val fahrenheit: Boolean get() = flags and 16 != 0
+
+    /** The station is in its menu or another screen where remote changes should wait. */
+    val inMenu: Boolean get() = mode in 3..7 || mode in 9..12
+}
+
 private fun ByteArray.u(i: Int): Int = this[i].toInt() and 0xFF
+private fun ByteArray.u16(i: Int): Int = u(i) or (u(i + 1) shl 8)
 
 /**
  * Connection to the UniSolder station: finds the USB device, asks for permission, reads the reports
@@ -374,7 +404,106 @@ class DeviceLink(private val ctx: Context) {
         send(byteArrayOf(CMD_BL_JUMP_TO_APP), 0)
     }
 
+    // ---- remote control and settings (firmware protocol 1) ----
+
+    /** null when the firmware does not answer: it has no remote control. */
+    fun appInfo(): AppInfo? {
+        val r = send(byteArrayOf(CMD_APP_GET_INFO), 1000) ?: return null
+        return AppInfo(minor = r.u(0), major = r.u(1), board = r.u(2), protocol = r.u(3))
+    }
+
+    fun getState(): DeviceState? {
+        val r = send(byteArrayOf(CMD_GET_STATE), 1000) ?: return null
+        return DeviceState(
+            set = r.u16(0),
+            target = r.u16(2),
+            presets = intArrayOf(r.u16(4), r.u16(6), r.u16(8), r.u16(10)),
+            holder = r.u16(12),
+            sleep = r.u16(14),
+            min = r.u16(16),
+            max = r.u16(18),
+            mode = r.u(20),
+            flags = r.u(21),
+            actIron = r.u(22),
+            tempStep = r.u(23).coerceAtLeast(1)
+        )
+    }
+
+    /** Sets the temperature in degrees C; the station limits it like the knob. Returns the temperature that was set. */
+    fun setTemp(degC: Int): Int? {
+        val r = send(byteArrayOf(CMD_SET_TEMP, (degC and 255).toByte(), ((degC shr 8) and 255).toByte()), 1000) ?: return null
+        AppLog.info("Set temperature " + degC + " -> " + r.u16(0))
+        return r.u16(0)
+    }
+
+    fun selectPreset(index: Int): Int? {
+        val r = send(byteArrayOf(CMD_PRESET, index.toByte()), 1000) ?: return null
+        return r.u16(0)
+    }
+
+    /** Returns true while the station sleeps, null when it did not answer. */
+    fun sleep(on: Boolean): Boolean? {
+        val r = send(byteArrayOf(CMD_SLEEP, if (on) 1 else 0), 1000) ?: return null
+        return r.u(0) != 0
+    }
+
+    /** Two-iron adapter: returns the active iron. */
+    fun switchIron(): Int? {
+        val r = send(byteArrayOf(CMD_SWITCH_IRON), 1000) ?: return null
+        return r.u(0)
+    }
+
+    /** The 64 settings bytes of the station (the pincode is left out by the firmware), or null. */
+    fun readSettings(): ByteArray? {
+        val out = ByteArray(SETTINGS_SIZE)
+        var addr = 0
+        while (addr < SETTINGS_SIZE) {
+            val n = minOf(SETTINGS_CHUNK, SETTINGS_SIZE - addr)
+            val r = send(byteArrayOf(CMD_READ_SETTINGS, addr.toByte(), n.toByte()), 1000) ?: return null
+            if (r.u(2) != 0 || r.u(1) != n) return null
+            System.arraycopy(r, 3, out, addr, n)
+            addr += n
+        }
+        return out
+    }
+
+    /** Writes the 64 settings bytes. The station must be restarted afterwards ([restartDevice]) to use them. */
+    fun writeSettings(data: ByteArray): Boolean {
+        require(data.size == SETTINGS_SIZE)
+        var addr = 0
+        while (addr < SETTINGS_SIZE) {
+            val n = minOf(SETTINGS_CHUNK, SETTINGS_SIZE - addr)
+            val b = ByteArray(5 + n)
+            b[0] = CMD_WRITE_SETTINGS
+            b[1] = 0x5A
+            b[2] = 0xA5.toByte()
+            b[3] = addr.toByte()
+            b[4] = n.toByte()
+            System.arraycopy(data, addr, b, 5, n)
+            val r = send(b, 3000) ?: return false
+            if (r.u(0) != 0) return false
+            addr += n
+        }
+        return true
+    }
+
+    fun restartDevice() {
+        AppLog.info("Restart station")
+        send(byteArrayOf(CMD_RESTART, 0x5A, 0xA5.toByte()), 0)
+    }
+
     companion object {
+        const val SETTINGS_SIZE = 64
+        const val SETTINGS_CHUNK = 48
+        const val CMD_APP_GET_INFO: Byte = 0x80.toByte()
+        const val CMD_GET_STATE: Byte = 0x10
+        const val CMD_SET_TEMP: Byte = 0x11
+        const val CMD_PRESET: Byte = 0x12
+        const val CMD_SLEEP: Byte = 0x13
+        const val CMD_SWITCH_IRON: Byte = 0x14
+        const val CMD_READ_SETTINGS: Byte = 0x20
+        const val CMD_WRITE_SETTINGS: Byte = 0x21
+        const val CMD_RESTART: Byte = 0x22
         const val VID = 0x04D8
         const val PID = 0x003C
         const val ACTION_PERMISSION = "org.unisolder.android.USB_PERMISSION"
