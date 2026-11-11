@@ -1073,16 +1073,15 @@ int IronPidSave(void) {
 	return 0;
 }
 
-//Forgets the saved values of the connected iron and loads its built-in values again. Returns 0 done, 1 no iron, 2 nothing was saved.
+//Restores the standard (built-in) values of the connected iron: forgets the saved values, if any, and loads the built-in ones. Returns 0 saved values forgotten, 1 no iron, 2 nothing was saved (built-in values loaded anyway).
 int IronPidClear(void) {
 	UINT8 buf[PIDS_LEN];
 	int slot, freeSlot;
 	if (IronID == 0x1919) return 1;
 	slot = PidSlotFind(IronID, PidWhich(), buf, &freeSlot);
-	if (slot < 0) return 2;
-	EEPWriteImm(PIDS_ADDR + slot * PIDS_STRIDE, 0xFF);
-	IronID = 0x1919;   //identify the iron again, which loads the built-in values
-	return 0;
+	if (slot >= 0) EEPWriteImm(PIDS_ADDR + slot * PIDS_STRIDE, 0xFF);
+	IronID = 0x1919;   //identify the iron again, which loads the built-in values (also drops values changed from the app but not saved)
+	return slot >= 0 ? 0 : 2;
 }
 
 //Called from the main loop after an iron was identified.

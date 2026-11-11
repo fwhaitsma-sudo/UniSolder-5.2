@@ -127,7 +127,8 @@ class PidTools(
     private val link: DeviceLink,
     private val prefs: Prefs,
     private val getPid: () -> Pid?,
-    private val applyPid: (Pid) -> Unit
+    private val applyPid: (Pid) -> Unit,
+    private val reloadPid: () -> Unit
 ) {
     val view = LinearLayout(act)
     var ironId = 0
@@ -190,9 +191,12 @@ class PidTools(
         keep.setOnClickListener { saveInStation() }
         view.addView(keep, LinearLayout.LayoutParams(m, w))
         val forget = Button(act)
-        forget.text = "Forget the values saved in the station"
+        forget.text = "Restore the standard values"
         forget.setOnClickListener { forgetInStation() }
         view.addView(forget, LinearLayout.LayoutParams(m, w))
+        val standardNote = TextView(act)
+        standardNote.text = "Standard values are the ones built into the firmware for this iron. Restoring them also removes values you saved in the station and values you changed but did not save."
+        view.addView(standardNote)
 
         // saved sets
         view.addView(title("Saved PID sets"))
@@ -314,13 +318,20 @@ class PidTools(
         io.execute {
             val r = link.pidClear()
             val msg = when (r) {
-                0 -> "Forgotten: the iron uses its built-in values again"
+                0 -> "Standard values restored (the saved values were removed)"
                 1 -> "No iron detected"
-                2 -> "Nothing was saved for this iron"
+                2 -> "Standard values restored"
                 else -> "No answer from the station: firmware too old?"
             }
-            AppLog.info("Forget saved PID: $msg")
-            ui.post { Toast.makeText(act, msg, Toast.LENGTH_LONG).show() }
+            AppLog.info("Restore standard PID: $msg")
+            ui.post {
+                Toast.makeText(act, msg, Toast.LENGTH_LONG).show()
+                if (r == 0 || r == 2) {
+                    original = null
+                    // the station identifies the iron again, then the sliders are read back
+                    ui.postDelayed({ reloadPid() }, 3000)
+                }
+            }
             refreshStored()
         }
     }

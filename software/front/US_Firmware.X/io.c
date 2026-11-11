@@ -220,7 +220,7 @@ void ProcessIO(){
                         IO_BUSY = 0;
                     }
                     break;
-                case 0x16: //forget the saved PID values of the connected iron; replies [status 0 ok / 1 no iron / 2 none saved]
+                case 0x16: //restore the standard PID values of the connected iron (forget saved ones); replies [status 0 saved values forgotten / 1 no iron / 2 none were saved, standard loaded anyway]
                     if(!HIDTxHandleBusy(USBInHandle)){
                         TXP.Command = 0x16;
                         TXP.Data[0] = IronPidClear();

@@ -331,7 +331,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
         pidReload.setOnClickListener { loadPid() }
         col.addView(pidReload)
 
-        pidTools = PidTools(this, io, link, prefs, { pid }, { setPidValues(it) })
+        pidTools = PidTools(this, io, link, prefs, { pid }, { setPidValues(it) }, { loadPid() })
         col.addView(pidTools.view, LinearLayout.LayoutParams(MATCH, WRAP))
 
         scroll.addView(col, FrameLayout.LayoutParams(MATCH, WRAP))
