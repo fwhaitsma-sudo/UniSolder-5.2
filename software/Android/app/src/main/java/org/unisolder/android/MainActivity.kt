@@ -43,6 +43,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
     private lateinit var dashboard: DashboardView
     private lateinit var recordButton: Button
     private lateinit var prefs: Prefs
+    private lateinit var pidTools: PidTools
     private val pages = ArrayList<View>()
     private val tabs = ArrayList<Button>()
 
@@ -330,6 +331,9 @@ class MainActivity : Activity(), DeviceLink.Listener {
         pidReload.setOnClickListener { loadPid() }
         col.addView(pidReload)
 
+        pidTools = PidTools(this, io, link, prefs, { pid }, { setPidValues(it) })
+        col.addView(pidTools.view, LinearLayout.LayoutParams(MATCH, WRAP))
+
         scroll.addView(col, FrameLayout.LayoutParams(MATCH, WRAP))
         return scroll
     }
@@ -393,6 +397,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
         } else {
             controlPage.onDisconnected()
             toolsPage.onDisconnected()
+            pidTools.onDisconnected()
             dashboard.showNoData()
             readout.text = "No data"
             powerBar.progress = 0
@@ -405,6 +410,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
         // duty 512 = heater on all the time
         val power = (s.duty * 100f / 512f).coerceIn(0f, 100f)
         toolsPage.onSample(s, power)
+        pidTools.onSample(s)
         if (dashboard.visibility == View.VISIBLE) dashboard.update(s, power)
         if (paused) return
         chart.add(floatArrayOf(s.set, s.temp, power * 5f, s.power, s.reached, s.avg, s.adc))
@@ -427,6 +433,8 @@ class MainActivity : Activity(), DeviceLink.Listener {
 
     override fun onInstrumentChange(id: Int) {
         toolsPage.ironId = id
+        pidTools.ironId = id
+        pidTools.forgetOriginal()
         toolsPage.showTip()
         if (!link.busy) loadPid()
     }
@@ -457,6 +465,23 @@ class MainActivity : Activity(), DeviceLink.Listener {
             f.label.text = f.format(f.bar.progress)
         }
         loadingPid = false
+        if (p != null) pidTools.onPidLoaded(p)
+    }
+
+    /** Puts the values on the sliders and sends them to the iron. */
+    private fun setPidValues(p: Pid) {
+        val old = pid ?: return
+        loadingPid = true
+        val values = listOf(p.kp, p.ki, p.dGain, p.ovsGain, p.gain)
+        for (i in pidFields.indices) {
+            val f = pidFields[i]
+            f.bar.progress = values[i].coerceIn(0, f.max)
+            f.label.text = f.format(f.bar.progress)
+        }
+        loadingPid = false
+        val n = Pid(p.gain, old.offset, p.kp, p.ki, p.dGain, p.ovsGain)
+        pid = n
+        io.execute { link.appSetPid(n) }
     }
 
     private fun schedulePidSend() {
