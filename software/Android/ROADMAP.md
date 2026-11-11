@@ -31,6 +31,7 @@ Update this file and commit after each finished item, so a new session can conti
 - [x] 12. Calibration helper (PidTools.kt, assumes room temp 25C, editable)
 - [x] 13. Fill the instruction manual (Claude Doc "UniSolder Android app: instruction manual", outline exists, sections empty)
 - [ ] 13b. (user request 2026-11-11) Save calibrated PID/Gain permanently: firmware cmds 0x15 save / 0x16 forget / 0x17 is-saved (EEPROM slots at 256.., 8 slots x16 bytes, per iron ID + adapter iron, applied from IronTasks after identify; protocol 2); app: PidTools 'Save in the station' buttons. Pushed, awaiting CI + hardware test. TODO: add to manual (PID tab section, Not-in-app list) and CHANGELOG only after user test. Also: "Restore the standard values" (cmd 0x16 always reloads built-in values, even with nothing saved; app reloads sliders after 3 s).
+- [ ] 15. (planned, not started; start only after the user has tested the current firmware) Wireless link: user will solder an ESP32 module to MCU pins 31 (RF4/U2RX) and 32 (RF5/U2TX), 3.3 V logic, both unconnected on the 5.2C front board (schematic + gerber checked 2026-11-11). Plan: firmware UART2 driver 115200 8N1 with framing + checksum feeding the same command handler (0x10-0x17, 0x20-0x22, 0x80; NO bootloader commands over the air); ESP32 runs a serial bridge (BLE or classic SPP; choose with user once the module is sourced); app gets a Bluetooth connection option next to USB; pairing PIN required.
 - [ ] 14. Changelog entries, user test, merge when the user says so
 
 ## Facts found (do not re-research)
