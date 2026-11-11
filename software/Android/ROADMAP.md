@@ -29,7 +29,7 @@ Update this file and commit after each finished item, so a new session can conti
 - [x] 10. Alerts (reached, overheat; ToolsPage.kt) and bench dashboard (DashboardView.kt, Live tab button, back closes)
 - [x] 11. PID: step-response analysis, step test (+30C, restores), saved PID sets per iron ID, revert (PidTools.kt; builds OK, untested on hardware)
 - [x] 12. Calibration helper (PidTools.kt, assumes room temp 25C, editable)
-- [ ] 13. Fill the instruction manual (Claude Doc "UniSolder Android app: instruction manual", outline exists, sections empty)
+- [x] 13. Fill the instruction manual (Claude Doc "UniSolder Android app: instruction manual", outline exists, sections empty)
 - [ ] 14. Changelog entries, user test, merge when the user says so
 
 ## Facts found (do not re-research)
@@ -50,3 +50,4 @@ Update this file and commit after each finished item, so a new session can conti
 - 2026-11-10: roadmap created. Firmware commands implemented and built (commit 32ad428, build OK).
 - 2026-11-11: items 8-10 done (commit 7b6f2a0, Android CI build OK on remote-control). Tabs now Live/Control/PID/Tools/Firmware. Helpers: Prefs.kt (SharedPreferences). Next: item 11 (PID analysis, saved sets, revert) in a new PidTools; then 12, 13.
 - 2026-11-11: items 11-12 done (commit 19f6c75, Android CI build OK). Next: item 13 (fill the manual doc; correct the earlier claim that the app 'could do' those features), then 14 after the user tests on hardware.
+- 2026-11-11: item 13 done (manual filled, correction included). Remaining: item 5/14 = user hardware test of fw-rc-* + android pre-release, then changelog + merge only when the user asks.
