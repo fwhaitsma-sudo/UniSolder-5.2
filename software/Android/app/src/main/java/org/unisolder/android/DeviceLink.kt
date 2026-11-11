@@ -456,6 +456,15 @@ class DeviceLink(private val ctx: Context) {
         return r.u(0)
     }
 
+    /** Saves the PID values in use for the connected iron in the station. 0 = done, 1 no iron, 2 out of range, 3 memory full, null = no answer. */
+    fun pidSave(): Int? = send(byteArrayOf(CMD_PID_SAVE), 2000)?.u(0)
+
+    /** Forgets the saved PID values of the connected iron. 0 = done, 1 no iron, 2 none saved, null = no answer. */
+    fun pidClear(): Int? = send(byteArrayOf(CMD_PID_CLEAR), 2000)?.u(0)
+
+    /** True when the station holds saved PID values for the connected iron, null = no answer. */
+    fun pidSaved(): Boolean? = send(byteArrayOf(CMD_PID_SAVED), 1000)?.let { it.u(0) != 0 }
+
     /** The 64 settings bytes of the station (the pincode is left out by the firmware), or null. */
     fun readSettings(): ByteArray? {
         val out = ByteArray(SETTINGS_SIZE)
@@ -501,6 +510,9 @@ class DeviceLink(private val ctx: Context) {
         const val CMD_APP_GET_INFO: Byte = 0x80.toByte()
         const val CMD_GET_STATE: Byte = 0x10
         const val CMD_SET_TEMP: Byte = 0x11
+        const val CMD_PID_SAVE: Byte = 0x15
+        const val CMD_PID_CLEAR: Byte = 0x16
+        const val CMD_PID_SAVED: Byte = 0x17
         const val CMD_PRESET: Byte = 0x12
         const val CMD_SLEEP: Byte = 0x13
         const val CMD_SWITCH_IRON: Byte = 0x14

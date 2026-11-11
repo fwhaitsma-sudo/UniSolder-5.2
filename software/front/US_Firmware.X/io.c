@@ -151,7 +151,7 @@ void ProcessIO(){
                         TXP.Data[0] = VERSION_MINOR;
                         TXP.Data[1] = VERSION_MAJOR;
                         TXP.Data[2] = BoardVersion;
-                        TXP.Data[3] = 1;
+                        TXP.Data[3] = 2;
                         USBInHandle = HIDTxPacket(HID_EP, (BYTE *)&TXP, 64);
                         IO_BUSY = 0;
                     }
@@ -208,6 +208,30 @@ void ProcessIO(){
                     if(!HIDTxHandleBusy(USBInHandle)){
                         TXP.Command = 0x14;
                         TXP.Data[0] = RemoteSwitchIron();
+                        USBInHandle = HIDTxPacket(HID_EP, (BYTE *)&TXP, 64);
+                        IO_BUSY = 0;
+                    }
+                    break;
+                case 0x15: //save the PID values in use for the connected iron in the EEPROM; replies [status 0 ok / 1 no iron / 2 out of range / 3 full]
+                    if(!HIDTxHandleBusy(USBInHandle)){
+                        TXP.Command = 0x15;
+                        TXP.Data[0] = IronPidSave();
+                        USBInHandle = HIDTxPacket(HID_EP, (BYTE *)&TXP, 64);
+                        IO_BUSY = 0;
+                    }
+                    break;
+                case 0x16: //forget the saved PID values of the connected iron; replies [status 0 ok / 1 no iron / 2 none saved]
+                    if(!HIDTxHandleBusy(USBInHandle)){
+                        TXP.Command = 0x16;
+                        TXP.Data[0] = IronPidClear();
+                        USBInHandle = HIDTxPacket(HID_EP, (BYTE *)&TXP, 64);
+                        IO_BUSY = 0;
+                    }
+                    break;
+                case 0x17: //are PID values saved for the connected iron; replies [1 yes / 0 no]
+                    if(!HIDTxHandleBusy(USBInHandle)){
+                        TXP.Command = 0x17;
+                        TXP.Data[0] = IronPidIsSaved();
                         USBInHandle = HIDTxPacket(HID_EP, (BYTE *)&TXP, 64);
                         IO_BUSY = 0;
                     }

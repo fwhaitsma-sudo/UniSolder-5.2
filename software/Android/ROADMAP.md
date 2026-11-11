@@ -30,6 +30,7 @@ Update this file and commit after each finished item, so a new session can conti
 - [x] 11. PID: step-response analysis, step test (+30C, restores), saved PID sets per iron ID, revert (PidTools.kt; builds OK, untested on hardware)
 - [x] 12. Calibration helper (PidTools.kt, assumes room temp 25C, editable)
 - [x] 13. Fill the instruction manual (Claude Doc "UniSolder Android app: instruction manual", outline exists, sections empty)
+- [ ] 13b. (user request 2026-11-11) Save calibrated PID/Gain permanently: firmware cmds 0x15 save / 0x16 forget / 0x17 is-saved (EEPROM slots at 256.., 8 slots x16 bytes, per iron ID + adapter iron, applied from IronTasks after identify; protocol 2); app: PidTools 'Save in the station' buttons. Pushed, awaiting CI + hardware test. TODO: add to manual (PID tab section, Not-in-app list) and CHANGELOG only after user test.
 - [ ] 14. Changelog entries, user test, merge when the user says so
 
 ## Facts found (do not re-research)

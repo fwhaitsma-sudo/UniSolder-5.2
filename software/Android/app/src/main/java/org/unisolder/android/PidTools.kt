@@ -144,6 +144,7 @@ class PidTools(
     private val calRef = EditText(act)
     private val calAmb = EditText(act)
     private val calText = TextView(act)
+    private val storedText = TextView(act)
     private val calApply = Button(act)
     private var calSuggest = 0
     private var lastTemp = 0f
@@ -175,6 +176,23 @@ class PidTools(
             if (o == null) Toast.makeText(act, "No values read yet", Toast.LENGTH_SHORT).show() else applyPid(copy(o))
         }
         view.addView(revert, LinearLayout.LayoutParams(m, w))
+
+        // permanent storage in the station
+        view.addView(title("Save in the station"))
+        val keepNote = TextView(act)
+        keepNote.text = "Normally the iron forgets changed PID and Gain values when it restarts. Saving keeps the values now on the sliders in the station for this iron, " +
+                "and they are loaded again every time this iron is detected. Needs the remote-control firmware (version 2 of the protocol)."
+        view.addView(keepNote)
+        storedText.setPadding(0, dp(4), 0, dp(4))
+        view.addView(storedText)
+        val keep = Button(act)
+        keep.text = "Save the current values in the station"
+        keep.setOnClickListener { saveInStation() }
+        view.addView(keep, LinearLayout.LayoutParams(m, w))
+        val forget = Button(act)
+        forget.text = "Forget the values saved in the station"
+        forget.setOnClickListener { forgetInStation() }
+        view.addView(forget, LinearLayout.LayoutParams(m, w))
 
         // saved sets
         view.addView(title("Saved PID sets"))
@@ -227,6 +245,7 @@ class PidTools(
                 val n = copy(p)
                 n.gain = calSuggest
                 applyPid(n)
+                Toast.makeText(act, "Applied. Use \"Save the current values in the station\" to keep it after a restart.", Toast.LENGTH_LONG).show()
                 calApply.visibility = View.GONE
             }
         }
@@ -244,6 +263,66 @@ class PidTools(
     /** Remember the values read from the iron the first time after connecting or changing iron. */
     fun onPidLoaded(p: Pid) {
         if (original == null) original = copy(p)
+        refreshStored()
+    }
+
+    // ------------------------------------------------------------------ permanent storage in the station
+
+    private fun refreshStored() {
+        io.execute {
+            val info = link.appInfo()
+            val text = when {
+                info == null -> "Cannot tell: no answer from the station."
+                info.protocol < 2 -> "This station firmware cannot store PID values. Update the firmware."
+                else -> when (link.pidSaved()) {
+                    true -> "Values are saved in the station for this iron."
+                    false -> "No values saved in the station for this iron: it uses its built-in values."
+                    null -> "Cannot tell: no answer from the station."
+                }
+            }
+            ui.post { storedText.text = text }
+        }
+    }
+
+    private fun saveInStation() {
+        val shown = getPid()
+        if (shown == null) {
+            Toast.makeText(act, "No PID values read from the iron", Toast.LENGTH_SHORT).show()
+            return
+        }
+        AlertDialog.Builder(act).setTitle("Save in the station")
+            .setMessage("Store " + pidText() + " in the station for this iron? It uses them every time this iron is detected, until you forget them.")
+            .setPositiveButton("Save") { _, _ ->
+                io.execute {
+                    val r = link.pidSave()
+                    val msg = when (r) {
+                        0 -> "Saved in the station"
+                        1 -> "No iron detected"
+                        2 -> "The station refused the values: out of range"
+                        3 -> "The station has no free space for another iron"
+                        else -> "No answer from the station: firmware too old?"
+                    }
+                    AppLog.info("Save PID in station: $msg")
+                    ui.post { Toast.makeText(act, msg, Toast.LENGTH_LONG).show() }
+                    refreshStored()
+                }
+            }
+            .setNegativeButton("Cancel", null).show()
+    }
+
+    private fun forgetInStation() {
+        io.execute {
+            val r = link.pidClear()
+            val msg = when (r) {
+                0 -> "Forgotten: the iron uses its built-in values again"
+                1 -> "No iron detected"
+                2 -> "Nothing was saved for this iron"
+                else -> "No answer from the station: firmware too old?"
+            }
+            AppLog.info("Forget saved PID: $msg")
+            ui.post { Toast.makeText(act, msg, Toast.LENGTH_LONG).show() }
+            refreshStored()
+        }
     }
 
     fun forgetOriginal() {

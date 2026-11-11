@@ -4,6 +4,7 @@
 #include "mcu.h"
 #include "PID.h"
 #include "main.h"
+#include "EEP.h"
 //ID       1    2    3    4    5    6    7    8    9   10   11   12   13   14   15   16   17   18   19   20   21   22   23   24   25
 //ID(HEX) 01   02   03   04   05   06   07   08   09   0A   0B   0C   0D   0E   0F   10   11   12   13   14   15   16   17   18   19
 //R      100  110  120  130  150  180  200  220  240  270  300  330  390  430  470  560  680  820   1K  1.2K 1.5k  2k   3k  5.6k inf.
@@ -1010,6 +1011,106 @@ void IronPairReload(void) {
 	IronID = 0x1919;
 }
 
+//Saved PID values per iron (set from the phone app after a calibration), kept in the EEPROM.
+//Slot: mark, ID lo, ID hi, iron of a two-iron adapter (0/1), Gain (2), KP (2), KI (2), DGain, OVSGain. 16 bytes per slot, so a slot never crosses a 32 byte EEPROM page.
+#define PIDS_ADDR   256
+#define PIDS_SLOTS  8
+#define PIDS_STRIDE 16
+#define PIDS_LEN    12
+#define PIDS_MARK   0xC7
+
+static volatile UINT8 PidLoadPending;
+
+static UINT8 PidWhich(void) {
+	return (CurPair != NULL && pars.ActIron) ? 1 : 0;
+}
+
+//Returns the slot holding this iron, or -1; *freeSlot gets an unused slot (or -1).
+static int PidSlotFind(UINT16 id, UINT8 which, UINT8 *buf, int *freeSlot) {
+	int i;
+	*freeSlot = -1;
+	for (i = 0; i < PIDS_SLOTS; i++) {
+		EEPRead(PIDS_ADDR + i * PIDS_STRIDE, buf, PIDS_LEN);
+		if (buf[0] == PIDS_MARK) {
+			if (buf[1] == (UINT8)(id & 0xFF) && buf[2] == (UINT8)(id >> 8) && buf[3] == which) return i;
+		}
+		else if (*freeSlot < 0) *freeSlot = i;
+	}
+	return -1;
+}
+
+static int PidValid(UINT16 gain, UINT16 kp, UINT16 ki, UINT8 dg, UINT8 ovs) {
+	return gain >= 8 && gain <= 256 && kp <= 32767 && ki <= 32767 && dg <= 32 && ovs <= 100;
+}
+
+//Saves the PID values now in use for the connected iron. Returns 0 on success, 1 no iron, 2 values out of range, 3 EEPROM full.
+int IronPidSave(void) {
+	UINT8 buf[PIDS_LEN], nb[PIDS_LEN];
+	int slot, freeSlot, i;
+	t_IronConfig *c = &IronPars.Config[0];
+	if (IronID == 0x1919 || !c->SensorConfig.Type) return 1;
+	if (c->PID_OVSGain > 100 || !PidValid(c->SensorConfig.Gain, c->PID_KP, c->PID_KI, c->PID_DGain, (UINT8)c->PID_OVSGain)) return 2;
+	slot = PidSlotFind(IronID, PidWhich(), buf, &freeSlot);
+	if (slot < 0) slot = freeSlot;
+	if (slot < 0) return 3;
+	nb[0] = PIDS_MARK;
+	nb[1] = IronID & 0xFF;
+	nb[2] = IronID >> 8;
+	nb[3] = PidWhich();
+	nb[4] = c->SensorConfig.Gain & 0xFF;
+	nb[5] = c->SensorConfig.Gain >> 8;
+	nb[6] = c->PID_KP & 0xFF;
+	nb[7] = c->PID_KP >> 8;
+	nb[8] = c->PID_KI & 0xFF;
+	nb[9] = c->PID_KI >> 8;
+	nb[10] = c->PID_DGain;
+	nb[11] = (UINT8)c->PID_OVSGain;
+	EEPRead(PIDS_ADDR + slot * PIDS_STRIDE, buf, PIDS_LEN);
+	for (i = 1; i < PIDS_LEN; i++) {   //the mark goes last, so a half written slot is never used
+		if (buf[i] != nb[i] || buf[0] != PIDS_MARK) EEPWriteImm(PIDS_ADDR + slot * PIDS_STRIDE + i, nb[i]);
+	}
+	if (buf[0] != PIDS_MARK) EEPWriteImm(PIDS_ADDR + slot * PIDS_STRIDE, PIDS_MARK);
+	return 0;
+}
+
+//Forgets the saved values of the connected iron and loads its built-in values again. Returns 0 done, 1 no iron, 2 nothing was saved.
+int IronPidClear(void) {
+	UINT8 buf[PIDS_LEN];
+	int slot, freeSlot;
+	if (IronID == 0x1919) return 1;
+	slot = PidSlotFind(IronID, PidWhich(), buf, &freeSlot);
+	if (slot < 0) return 2;
+	EEPWriteImm(PIDS_ADDR + slot * PIDS_STRIDE, 0xFF);
+	IronID = 0x1919;   //identify the iron again, which loads the built-in values
+	return 0;
+}
+
+//Called from the main loop after an iron was identified.
+static void IronPidApply(void) {
+	UINT8 buf[PIDS_LEN];
+	int freeSlot;
+	UINT16 gain, kp, ki;
+	t_IronConfig *c = &IronPars.Config[0];
+	if (IronID == 0x1919 || !c->SensorConfig.Type) return;
+	if (PidSlotFind(IronID, PidWhich(), buf, &freeSlot) < 0) return;
+	gain = buf[4] | (buf[5] << 8);
+	kp = buf[6] | (buf[7] << 8);
+	ki = buf[8] | (buf[9] << 8);
+	if (!PidValid(gain, kp, ki, buf[10], buf[11])) return;
+	c->SensorConfig.Gain = gain;
+	c->PID_KP = kp;
+	c->PID_KI = ki;
+	c->PID_DGain = buf[10];
+	c->PID_OVSGain = buf[11];
+}
+
+int IronPidIsSaved(void) {
+	UINT8 buf[PIDS_LEN];
+	int freeSlot;
+	if (IronID == 0x1919) return 0;
+	return PidSlotFind(IronID, PidWhich(), buf, &freeSlot) >= 0;
+}
+
 volatile int IronTicks;
 
 void IronIdentify() {
@@ -1093,6 +1194,7 @@ void IronIdentify() {
 				}
 			}
 			PIDInit();
+			PidLoadPending = 1;
 		}
 	}
 	else {
@@ -1121,6 +1223,10 @@ void IronInit() {
 
 void IronTasks() {
 	int i;
+	if (PidLoadPending && IronID != 0x1919) {
+		PidLoadPending = 0;
+		IronPidApply();
+	}
 	if (IronTicks != ISRTicks) {
 		IronTicks = ISRTicks;
 		if (!mainFlags.Calibration && (IronTicks & 15) == 15) {

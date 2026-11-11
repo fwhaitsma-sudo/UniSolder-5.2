@@ -80,7 +80,10 @@ IRON_H_EXTERN volatile t_IronPars IronPars;
 IRON_H_EXTERN void IronInit();
 IRON_H_EXTERN void IronTasks();
 IRON_H_EXTERN int IronPairActive(void);     //nonzero when a two-iron adapter is connected
-IRON_H_EXTERN void IronPairReload(void);    //load the iron selected by pars.ActIron
+IRON_H_EXTERN void IronPairReload(void);
+IRON_H_EXTERN int IronPidSave(void);        //save the PID values now in use for this iron in the EEPROM (0 ok)
+IRON_H_EXTERN int IronPidClear(void);       //forget the saved PID values of this iron (0 ok, 2 none saved)
+IRON_H_EXTERN int IronPidIsSaved(void);     //nonzero when this iron has saved PID values    //load the iron selected by pars.ActIron
 
 #undef IRON_H_EXTERN
 
