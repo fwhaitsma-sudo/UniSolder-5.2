@@ -21,7 +21,9 @@ class Sample(
     val avg: Float,
     val duty: Float,
     val power: Float,
-    val reached: Float
+    val reached: Float,
+    /** heater resistance in ohms (the station sends it times ten) */
+    val resistance: Float
 )
 
 class Pid(
@@ -289,7 +291,8 @@ class DeviceLink(private val ctx: Context) {
                     avg = p.u(8) * 0.5f + p.u(9) * 128f,
                     duty = (p.u(32) + p.u(33) * 256) / 128f,
                     power = if (p.u(14) != 0) 100f else 0f,
-                    reached = p.u(31) * 100f
+                    reached = p.u(31) * 100f,
+                    resistance = ((p.u(10) or (p.u(11) shl 8)).toShort().toInt()) / 10f
                 )
                 main.post { listener?.onLive(s) }
             }

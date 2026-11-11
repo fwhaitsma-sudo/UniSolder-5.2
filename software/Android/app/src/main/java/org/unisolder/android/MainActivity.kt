@@ -39,6 +39,10 @@ class MainActivity : Activity(), DeviceLink.Listener {
     private lateinit var statusText: TextView
     private lateinit var connectButton: Button
     private lateinit var controlPage: ControlPage
+    private lateinit var toolsPage: ToolsPage
+    private lateinit var dashboard: DashboardView
+    private lateinit var recordButton: Button
+    private lateinit var prefs: Prefs
     private val pages = ArrayList<View>()
     private val tabs = ArrayList<Button>()
 
@@ -90,6 +94,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        prefs = Prefs(this)
         link = DeviceLink(this)
         link.listener = this
         buildUi()
@@ -116,6 +121,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
 
     override fun onDestroy() {
         controlPage.destroy()
+        toolsPage.recorder.stop()
         AppLog.listener = null
         link.listener = null
         link.stop()
@@ -125,7 +131,9 @@ class MainActivity : Activity(), DeviceLink.Listener {
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        if (updating) {
+        if (dashboard.visibility == View.VISIBLE) {
+            closeDashboard()
+        } else if (updating) {
             Toast.makeText(this, "Firmware update in progress", Toast.LENGTH_SHORT).show()
         } else {
             super.onBackPressed()
@@ -156,26 +164,38 @@ class MainActivity : Activity(), DeviceLink.Listener {
 
         val content = FrameLayout(this)
         root.addView(content, LinearLayout.LayoutParams(MATCH, 0, 1f))
+        toolsPage = ToolsPage(this, io, prefs)
+        dashboard = DashboardView(this) { closeDashboard() }
         pages.add(buildLivePage())
         controlPage = ControlPage(this, link, io)
         pages.add(controlPage.view)
         pages.add(buildPidPage())
+        pages.add(toolsPage.view)
         pages.add(buildFirmwarePage())
         for (p in pages) content.addView(p, FrameLayout.LayoutParams(MATCH, MATCH))
 
         val tabBar = LinearLayout(this)
         tabBar.orientation = LinearLayout.HORIZONTAL
-        val names = listOf("Live", "Control", "PID", "Firmware")
+        val names = listOf("Live", "Control", "PID", "Tools", "Firmware")
         for (i in names.indices) {
             val b = Button(this)
             b.text = names[i]
+            b.minWidth = 0
+            b.minimumWidth = 0
+            b.textSize = 13f
+            b.isAllCaps = false
+            b.setPadding(dp(2), 0, dp(2), 0)
             b.setOnClickListener { showPage(i) }
             tabs.add(b)
             tabBar.addView(b, LinearLayout.LayoutParams(0, WRAP, 1f))
         }
         root.addView(tabBar)
 
-        setContentView(root)
+        val frame = FrameLayout(this)
+        frame.addView(root, FrameLayout.LayoutParams(MATCH, MATCH))
+        frame.addView(dashboard, FrameLayout.LayoutParams(MATCH, MATCH))
+        setContentView(frame)
+        toolsPage.onRecordingChanged = { on -> recordButton.text = if (on) "Stop rec" else "Record" }
         showPage(0)
         applyPid(null)
     }
@@ -186,6 +206,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
             tabs[i].alpha = if (i == index) 1f else 0.55f
         }
         if (::controlPage.isInitialized) controlPage.setActive(index == 1)
+        if (::toolsPage.isInitialized) toolsPage.setActive(index == 3)
     }
 
     private fun buildLivePage(): View {
@@ -244,13 +265,24 @@ class MainActivity : Activity(), DeviceLink.Listener {
         }
         page.addView(grid)
 
+        val buttons = LinearLayout(this)
+        buttons.orientation = LinearLayout.HORIZONTAL
         pauseButton = Button(this)
         pauseButton.text = "Pause"
         pauseButton.setOnClickListener {
             paused = !paused
             pauseButton.text = if (paused) "Resume" else "Pause"
         }
-        page.addView(pauseButton)
+        buttons.addView(pauseButton, LinearLayout.LayoutParams(0, WRAP, 1f))
+        recordButton = Button(this)
+        recordButton.text = "Record"
+        recordButton.setOnClickListener { toolsPage.toggleRecording() }
+        buttons.addView(recordButton, LinearLayout.LayoutParams(0, WRAP, 1f))
+        val dashButton = Button(this)
+        dashButton.text = "Dashboard"
+        dashButton.setOnClickListener { openDashboard() }
+        buttons.addView(dashButton, LinearLayout.LayoutParams(0, WRAP, 1f))
+        page.addView(buttons)
         return page
     }
 
@@ -360,6 +392,8 @@ class MainActivity : Activity(), DeviceLink.Listener {
             }
         } else {
             controlPage.onDisconnected()
+            toolsPage.onDisconnected()
+            dashboard.showNoData()
             readout.text = "No data"
             powerBar.progress = 0
             powerText.text = "\u2014"
@@ -368,9 +402,11 @@ class MainActivity : Activity(), DeviceLink.Listener {
     }
 
     override fun onLive(s: Sample) {
-        if (paused) return
         // duty 512 = heater on all the time
         val power = (s.duty * 100f / 512f).coerceIn(0f, 100f)
+        toolsPage.onSample(s, power)
+        if (dashboard.visibility == View.VISIBLE) dashboard.update(s, power)
+        if (paused) return
         chart.add(floatArrayOf(s.set, s.temp, power * 5f, s.power, s.reached, s.avg, s.adc))
         if (++sampleCount % 5 == 0) {
             readout.text = String.format(Locale.US, "Set %.0f\u00B0C    Actual %.0f\u00B0C", s.set, s.temp)
@@ -379,7 +415,19 @@ class MainActivity : Activity(), DeviceLink.Listener {
         }
     }
 
+    private fun openDashboard() {
+        dashboard.visibility = View.VISIBLE
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+
+    private fun closeDashboard() {
+        dashboard.visibility = View.GONE
+        if (!updating) window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+
     override fun onInstrumentChange(id: Int) {
+        toolsPage.ironId = id
+        toolsPage.showTip()
         if (!link.busy) loadPid()
     }
 
@@ -445,6 +493,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (controlPage.onActivityResult(requestCode, resultCode, data)) return
+        if (toolsPage.onActivityResult(requestCode, resultCode, data)) return
         if (requestCode == REQ_HEX && resultCode == RESULT_OK) {
             val uri = data?.data ?: return
             var name = "firmware.hex"
