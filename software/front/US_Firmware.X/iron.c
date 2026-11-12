@@ -1084,6 +1084,30 @@ int IronPidClear(void) {
 	return slot >= 0 ? 0 : 2;
 }
 
+//The values the iron has after identification (built-in, or saved from the app): used for tips without calibration.
+static UINT16 BaseGain, BaseKP, BaseKI;
+static UINT8 BaseDGain, BaseOVSGain;
+static UINT8 BaseValid;
+
+//Puts the PID values of the tip in use on the iron: its own calibration when it has one, otherwise the iron's own values.
+void TipApplyActive(void) {
+	t_Tip t;
+	t_IronConfig *c = &IronPars.Config[0];
+	if (IronID == 0x1919 || !c->SensorConfig.Type || !BaseValid) return;
+	c->SensorConfig.Gain = BaseGain;
+	c->PID_KP = BaseKP;
+	c->PID_KI = BaseKI;
+	c->PID_DGain = BaseDGain;
+	c->PID_OVSGain = BaseOVSGain;
+	if (TipActInst < TIP_INST && TipActTip < TIP_PER_INST && TipRead(TipActInst, TipActTip, &t) && t.Cal) {
+		c->SensorConfig.Gain = t.Gain;
+		c->PID_KP = t.KP;
+		c->PID_KI = t.KI;
+		c->PID_DGain = t.DGain;
+		c->PID_OVSGain = t.OVSGain;
+	}
+}
+
 //Called from the main loop after an iron was identified.
 static void IronPidApply(void) {
 	UINT8 buf[PIDS_LEN];
@@ -1091,16 +1115,25 @@ static void IronPidApply(void) {
 	UINT16 gain, kp, ki;
 	t_IronConfig *c = &IronPars.Config[0];
 	if (IronID == 0x1919 || !c->SensorConfig.Type) return;
-	if (PidSlotFind(IronID, PidWhich(), buf, &freeSlot) < 0) return;
-	gain = buf[4] | (buf[5] << 8);
-	kp = buf[6] | (buf[7] << 8);
-	ki = buf[8] | (buf[9] << 8);
-	if (!PidValid(gain, kp, ki, buf[10], buf[11])) return;
-	c->SensorConfig.Gain = gain;
-	c->PID_KP = kp;
-	c->PID_KI = ki;
-	c->PID_DGain = buf[10];
-	c->PID_OVSGain = buf[11];
+	if (PidSlotFind(IronID, PidWhich(), buf, &freeSlot) >= 0) {
+		gain = buf[4] | (buf[5] << 8);
+		kp = buf[6] | (buf[7] << 8);
+		ki = buf[8] | (buf[9] << 8);
+		if (PidValid(gain, kp, ki, buf[10], buf[11])) {
+			c->SensorConfig.Gain = gain;
+			c->PID_KP = kp;
+			c->PID_KI = ki;
+			c->PID_DGain = buf[10];
+			c->PID_OVSGain = buf[11];
+		}
+	}
+	BaseGain = c->SensorConfig.Gain;
+	BaseKP = c->PID_KP;
+	BaseKI = c->PID_KI;
+	BaseDGain = c->PID_DGain;
+	BaseOVSGain = (UINT8)c->PID_OVSGain;
+	BaseValid = 1;
+	TipApplyActive();
 }
 
 int IronPidIsSaved(void) {
@@ -1193,6 +1226,7 @@ void IronIdentify() {
 				}
 			}
 			PIDInit();
+			BaseValid = 0;
 			PidLoadPending = 1;
 		}
 	}

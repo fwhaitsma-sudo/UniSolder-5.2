@@ -70,11 +70,30 @@ typedef struct {
 #define PAROD_EEP_ADDR     51   //EEPROM: marker, then 2 bytes with the odd degree of T1-T4, HOLDER T, SLEEP T and the OFF memories (stored values are in units of 2 C)
 #define PAROD_EEP_MARK     0xA7
 
+#define TIP_INST           4    //TIP PRESET: instruments
+#define TIP_PER_INST       10   //TIP PRESET: tips per instrument
+#define TIP_NAME_LEN       10   //characters in an instrument or tip name
+#define TIPHEAD_EEP_ADDR   512  //EEPROM: marker, active instrument, active tip (0xFF = none)
+#define TIPHEAD_EEP_MARK   0xB5
+#define TIPINST_EEP_ADDR   528  //EEPROM: instrument names, 16 bytes each (name characters, then 0 or padding)
+#define TIPREC_EEP_ADDR    640  //EEPROM: tip records, 32 bytes each, (instrument * 10 + tip): mark 0xC9, name (10), flags (bit 0 = calibrated), Gain (2), KP (2), KI (2), DGain, OVSGain
+#define TIPREC_EEP_MARK    0xC9
+
+typedef struct {
+    char Name[TIP_NAME_LEN + 1];
+    UINT8 Cal;          //1 = this tip has its own calibration (the values below are used)
+    UINT16 Gain;
+    UINT16 KP;
+    UINT16 KI;
+    UINT8 DGain;
+    UINT8 OVSGain;
+} t_Tip;
+
 #define NB_OF_MENU_PARAMS  (sizeof(MenuOrder) / sizeof(MenuOrder[0])
 
 #ifndef _PARS_C
-extern const char MenuOrder[25];
-extern const t_ParDef ParDef[32];
+extern const char MenuOrder[23];
+extern const t_ParDef ParDef[33];
 extern char UserName[NAME_LEN + 1];  //name shown at power-up, empty = show the logo
 extern void SaveName(void);
 extern char UserPin[PIN_LEN + 1];    //menu pincode, empty = no pincode
@@ -83,6 +102,17 @@ extern UINT16 ParOdd;               //odd degree of T1-T4 (bits 0-3), HOLDER T (
 extern void SaveParOdd(void);
 extern UINT8 TAltOdd;                //two-iron adapter: the other iron's set temperature is odd (pars.TTempAlt holds it in units of 2 C)
 extern void LoadPars(void);
+extern char TipInstName[TIP_INST][TIP_NAME_LEN + 1];   //instrument names, empty = unnamed
+extern char TipActName[TIP_NAME_LEN + 1];              //name of the tip in use, empty = none or unnamed
+extern UINT8 TipActInst;                               //tip in use: instrument 0-3 (0xFF = none)
+extern UINT8 TipActTip;                                //tip in use: tip 0-9 (0xFF = none)
+extern void TipsLoad(void);
+extern int TipRead(int inst, int tip, t_Tip * t);      //1 when the tip has a record
+extern void TipWrite(int inst, int tip, const t_Tip * t);
+extern void TipClearCal(int inst, int tip);            //forget the calibration of a tip, keep the name
+extern void TipSaveInstName(int inst);
+extern void TipSetActive(int inst, int tip);           //remember the tip in use (0xFF, 0xFF = none)
+extern void TipRefreshName(void);
 extern void SavePars();
 #endif
 

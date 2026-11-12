@@ -21,7 +21,8 @@ const char * StrButtons[]   = {"+/- ", "-/+ "};
 const char * StrOffOnAuto[] = {"OFF ", "ON  ", "AUTO"};
 const char * StrMenuUp[]    = {"KEY+", "KEY-"};
 
-const unsigned char MenuOrder[] = {18,19,0,1,2,22,3,4,5,6,7,11,13,8,10,14,9,12,28,27,16,17,30,31,29};
+//ROTATION (12), BUTTONS (10) and MENU DOWN (14) are no longer in the menu: their values stay as they were set
+const unsigned char MenuOrder[] = {32,18,19,0,1,2,22,3,4,5,6,7,11,13,8,9,28,27,16,17,30,31,29};
 
 char UserName[NAME_LEN + 1];
 char UserPin[PIN_LEN + 1];
@@ -63,6 +64,7 @@ const t_ParDef ParDef[] = {
     {"   VERSION ",   0,       0,       0, 0,            0, 0,            0}, //29
     {"      NAME ",   0,       0,       0, 0,            0, 0,            0}, //30 name shown at power-up
     {"   PINCODE ",   0,       0,       0, 0,            0, 0,            0}, //31 menu pincode
+    {" TIP PRESET",   0,       0,       0, 0,            0, 0,            0}, //32 instruments and tips
 };
 
 //All values are right-aligned to the right edge of the display (the col argument is not used).
@@ -195,6 +197,134 @@ void SaveParOdd(void)
     if(EEPRead(PAROD_EEP_ADDR + 2, 0, 1) != (UINT8)(ParOdd >> 8)) EEPWriteImm(PAROD_EEP_ADDR + 2, ParOdd >> 8);
 }
 
+//----------------------------------------------------------------------------------------------
+// TIP PRESET: 4 instruments with 10 tips each, with names and a calibration (Gain and PID) per tip
+
+char TipInstName[TIP_INST][TIP_NAME_LEN + 1];
+char TipActName[TIP_NAME_LEN + 1];
+UINT8 TipActInst = 0xFF;
+UINT8 TipActTip = 0xFF;
+
+static UINT16 TipRecAddr(int inst, int tip){
+    return TIPREC_EEP_ADDR + (inst * TIP_PER_INST + tip) * 32;
+}
+
+static void EEPUpdate(UINT16 a, UINT8 v){
+    if(EEPRead(a, 0, 1) != v) EEPWriteImm(a, v);
+}
+
+//keeps the printable characters of b[0..n-1] up to the first other byte, 0 terminated
+static void TipCopyName(char * d, const UINT8 * b, int n){
+    int i;
+    for(i = 0; i < n; i++){
+        if(b[i] < 32 || b[i] > 126) break;
+        d[i] = b[i];
+    }
+    d[i] = 0;
+    for(i--; i >= 0 && d[i] == ' '; i--) d[i] = 0;     //no trailing spaces
+}
+
+int TipRead(int inst, int tip, t_Tip * t){
+    UINT8 b[20];
+    t->Name[0] = 0;
+    t->Cal = 0;
+    t->Gain = t->KP = t->KI = 0;
+    t->DGain = t->OVSGain = 0;
+    if(inst < 0 || inst >= TIP_INST || tip < 0 || tip >= TIP_PER_INST) return 0;
+    EEPRead(TipRecAddr(inst, tip), b, 20);
+    if(b[0] != TIPREC_EEP_MARK) return 0;
+    TipCopyName(t->Name, b + 1, TIP_NAME_LEN);
+    t->Gain = b[12] | (b[13] << 8);
+    t->KP = b[14] | (b[15] << 8);
+    t->KI = b[16] | (b[17] << 8);
+    t->DGain = b[18];
+    t->OVSGain = b[19];
+    //only use calibration values that are inside the limits of the PID page of the app
+    t->Cal = (b[11] & 1) && t->Gain >= 8 && t->Gain <= 256 && t->KP <= 32767 && t->KI <= 32767 && t->DGain <= 32 && t->OVSGain <= 100;
+    return 1;
+}
+
+void TipWrite(int inst, int tip, const t_Tip * t){
+    UINT8 b[20];
+    UINT16 a;
+    int i, n = 0;
+    if(inst < 0 || inst >= TIP_INST || tip < 0 || tip >= TIP_PER_INST) return;
+    for(i = 0; i < 20; i++) b[i] = 0;
+    while(n < TIP_NAME_LEN && t->Name[n]){ b[1 + n] = t->Name[n]; n++; }
+    b[11] = t->Cal ? 1 : 0;
+    b[12] = t->Gain & 0xFF;
+    b[13] = t->Gain >> 8;
+    b[14] = t->KP & 0xFF;
+    b[15] = t->KP >> 8;
+    b[16] = t->KI & 0xFF;
+    b[17] = t->KI >> 8;
+    b[18] = t->DGain;
+    b[19] = t->OVSGain;
+    a = TipRecAddr(inst, tip);
+    for(i = 1; i < 20; i++) EEPUpdate(a + i, b[i]);
+    EEPUpdate(a, TIPREC_EEP_MARK);          //the mark goes last, so a half written record is never used
+    if(inst == TipActInst && tip == TipActTip) TipRefreshName();
+}
+
+void TipClearCal(int inst, int tip){
+    t_Tip t;
+    if(!TipRead(inst, tip, &t)) return;
+    t.Cal = 0;
+    TipWrite(inst, tip, &t);
+}
+
+void TipSaveInstName(int inst){
+    UINT16 a = TIPINST_EEP_ADDR + inst * 16;
+    int i, n = 0;
+    if(inst < 0 || inst >= TIP_INST) return;
+    for(i = 0; i < TIP_NAME_LEN; i++){
+        UINT8 c = 0;
+        if(n == i && TipInstName[inst][i]){ c = TipInstName[inst][i]; n++; }
+        EEPUpdate(a + i, c);
+    }
+}
+
+void TipRefreshName(void){
+    t_Tip t;
+    TipActName[0] = 0;
+    if(TipActInst < TIP_INST && TipActTip < TIP_PER_INST && TipRead(TipActInst, TipActTip, &t)){
+        for(int i = 0; i <= TIP_NAME_LEN; i++) TipActName[i] = t.Name[i];
+    }
+}
+
+void TipSetActive(int inst, int tip){
+    if(inst < 0 || inst >= TIP_INST || tip < 0 || tip >= TIP_PER_INST){
+        inst = 0xFF;
+        tip = 0xFF;
+    }
+    TipActInst = inst;
+    TipActTip = tip;
+    EEPUpdate(TIPHEAD_EEP_ADDR + 1, TipActInst);
+    EEPUpdate(TIPHEAD_EEP_ADDR + 2, TipActTip);
+    EEPUpdate(TIPHEAD_EEP_ADDR, TIPHEAD_EEP_MARK);
+    TipRefreshName();
+}
+
+void TipsLoad(void){
+    int i;
+    UINT8 b[TIP_NAME_LEN];
+    for(i = 0; i < TIP_INST; i++){
+        EEPRead(TIPINST_EEP_ADDR + i * 16, b, TIP_NAME_LEN);
+        TipCopyName(TipInstName[i], b, TIP_NAME_LEN);
+    }
+    TipActInst = 0xFF;
+    TipActTip = 0xFF;
+    if(EEPRead(TIPHEAD_EEP_ADDR, 0, 1) == TIPHEAD_EEP_MARK){
+        UINT8 ai = EEPRead(TIPHEAD_EEP_ADDR + 1, 0, 1);
+        UINT8 at = EEPRead(TIPHEAD_EEP_ADDR + 2, 0, 1);
+        if(ai < TIP_INST && at < TIP_PER_INST){
+            TipActInst = ai;
+            TipActTip = at;
+        }
+    }
+    TipRefreshName();
+}
+
 void LoadPars(void)
 {
     int i;
@@ -222,6 +352,7 @@ void LoadPars(void)
 
     LoadName();
     LoadPin();
+    TipsLoad();
 
     //odd degree of T1-T4, HOLDER T, SLEEP T and the OFF memories; only valid on a stored value below the maximum
     ParOdd = 0;
