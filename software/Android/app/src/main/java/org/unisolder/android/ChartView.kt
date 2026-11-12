@@ -17,10 +17,8 @@ class ChartView(ctx: Context) : View(ctx) {
         Series("Set", Color.rgb(255, 82, 82), true),
         Series("Temp", Color.rgb(105, 240, 174), true),
         Series("Power", Color.rgb(255, 202, 40), true),
-        Series("Heater on", Color.rgb(64, 196, 255), false),
-        Series("Reached", Color.rgb(186, 104, 200), false),
-        Series("Filtered", Color.rgb(255, 138, 101), false),
-        Series("ADC", Color.rgb(200, 200, 200), false)
+        // the temperature the PID loop reacts to (smoothed temperature plus the derivative term); off until switched on
+        Series("PID input", Color.rgb(64, 196, 255), false)
     )
 
     private var count = 0

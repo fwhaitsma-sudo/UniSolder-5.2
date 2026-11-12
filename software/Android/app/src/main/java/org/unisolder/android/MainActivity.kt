@@ -413,7 +413,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
         pidTools.onSample(s)
         if (dashboard.visibility == View.VISIBLE) dashboard.update(s, power)
         if (paused) return
-        chart.add(floatArrayOf(s.set, s.temp, power * 5f, s.power, s.reached, s.avg, s.adc))
+        chart.add(floatArrayOf(s.set, s.temp, power * 5f, s.pidInput))
         if (++sampleCount % 5 == 0) {
             readout.text = String.format(Locale.US, "Set %.0f\u00B0C    Actual %.0f\u00B0C", s.set, s.temp)
             powerBar.progress = Math.round(power)

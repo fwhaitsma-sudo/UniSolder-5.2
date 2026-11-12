@@ -22,6 +22,8 @@ class Sample(
     val duty: Float,
     val power: Float,
     val reached: Float,
+    /** temperature the PID loop reacts to: smoothed temperature plus the derivative term */
+    val pidInput: Float,
     /** heater resistance in ohms (the station sends it times ten) */
     val resistance: Float
 )
@@ -292,6 +294,7 @@ class DeviceLink(private val ctx: Context) {
                     duty = (p.u(32) + p.u(33) * 256) / 128f,
                     power = if (p.u(14) != 0) 100f else 0f,
                     reached = p.u(31) * 100f,
+                    pidInput = p.u(12) * 0.5f + p.u(13) * 128f,
                     resistance = ((p.u(10) or (p.u(11) shl 8)).toShort().toInt()) / 10f
                 )
                 main.post { listener?.onLive(s) }
