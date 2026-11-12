@@ -57,6 +57,9 @@ class ToolsPage(
     private var notReachedSince = 0L
     private var overheatSince = 0L
     private var overheatAlerted = false
+    private var overheatStartTemp = 0f
+    private var lastSet = -1f
+    private var quietUntil = 0L
 
     private fun dp(v: Int): Int = (v * act.resources.displayMetrics.density).toInt()
 
@@ -103,7 +106,7 @@ class ToolsPage(
         }
         col.addView(reachedCheck)
         overheatCheck = CheckBox(act)
-        overheatCheck.text = "Warn when the tip stays 25°C above the set temperature"
+        overheatCheck.text = "Warn when the tip stays 25°C above the target and is not cooling"
         overheatCheck.isChecked = prefs.getBool("alert_overheat", false)
         overheatCheck.setOnCheckedChangeListener { _, on ->
             prefs.putBool("alert_overheat", on)
@@ -255,13 +258,32 @@ class ToolsPage(
         }
         wasReached = reached
 
-        if (s.set > 0f && s.temp > s.set + 25f) {
-            if (overheatSince == 0L) overheatSince = now
-            if (!overheatAlerted && now - overheatSince >= 5000 && overheatCheck.isChecked) {
-                overheatAlerted = true
-                alert("Tip too hot", String.format(Locale.US, "%.0f°C, set %.0f°C", s.temp, s.set))
+        // Overheat: the tip stays well above the target and is not cooling down.
+        // The target (the "set" in the live data) drops when the iron goes in the stand or to sleep, and the tip then cools
+        // for a while above the new, lower target: that is no overheating. Any change of the target restarts the check,
+        // and after a lowering the check stays quiet for two minutes.
+        if (lastSet >= 0f && s.set != lastSet) {
+            overheatSince = 0L
+            overheatAlerted = false
+            quietUntil = now + (if (s.set < lastSet) 120000L else 10000L)
+        }
+        lastSet = s.set
+        if (s.set > 0f && s.temp > s.set + 25f && now >= quietUntil) {
+            if (overheatSince == 0L) {
+                overheatSince = now
+                overheatStartTemp = s.temp
             }
-        } else if (s.temp < s.set + 10f) {
+            if (now - overheatSince >= 10000) {
+                if (s.temp < overheatStartTemp - 2f) {
+                    // still cooling: look again from here
+                    overheatSince = now
+                    overheatStartTemp = s.temp
+                } else if (!overheatAlerted && overheatCheck.isChecked) {
+                    overheatAlerted = true
+                    alert("Tip too hot", String.format(Locale.US, "%.0f\u00B0C, set %.0f\u00B0C", s.temp, s.set))
+                }
+            }
+        } else if (s.temp < s.set + 10f || s.set <= 0f || now < quietUntil) {
             overheatSince = 0L
             overheatAlerted = false
         }
@@ -273,6 +295,9 @@ class ToolsPage(
         wasReached = false
         notReachedSince = 0L
         overheatSince = 0L
+        overheatAlerted = false
+        lastSet = -1f
+        quietUntil = 0L
         showTip()
     }
 
