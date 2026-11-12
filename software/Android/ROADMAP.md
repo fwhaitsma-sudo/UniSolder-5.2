@@ -55,3 +55,4 @@ Update this file and commit after each finished item, so a new session can conti
 - 2026-11-11: items 11-12 done (commit 19f6c75, Android CI build OK). Next: item 13 (fill the manual doc; correct the earlier claim that the app 'could do' those features), then 14 after the user tests on hardware.
 - 2026-11-11: item 13 done (manual filled, correction included). Remaining: item 5/14 = user hardware test of fw-rc-* + android pre-release, then changelog + merge only when the user asks.
 - 2026-11-12: bug fix (user report): false 'tip too hot' alert when the iron leaves the cradle. Cause: live 'set' is the current target (drops in stand/sleep) while the tip still cools. Alert now needs temp > target+25 for 10 s without cooling (>2 C drop restarts), restarts on any target change, quiet 120 s after a lowering / 10 s after a rise. ToolsPage.kt.
+- 2026-11-12: removed the 'temperature reached' alert (user: not needed). Only the overheat alert remains.

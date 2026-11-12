@@ -40,7 +40,6 @@ class ToolsPage(
     private val recordText: TextView
     private val sessionsBox: LinearLayout
     private val tipText: TextView
-    private val reachedCheck: CheckBox
     private val overheatCheck: CheckBox
     private var exportFile: File? = null
 
@@ -53,8 +52,6 @@ class ToolsPage(
     private var sampleCount = 0
 
     // alerts
-    private var wasReached = false
-    private var notReachedSince = 0L
     private var overheatSince = 0L
     private var overheatAlerted = false
     private var overheatStartTemp = 0f
@@ -97,14 +94,6 @@ class ToolsPage(
         col.addView(baseButton, LinearLayout.LayoutParams(MATCH_P, WRAP_P))
 
         col.addView(title("Alerts"))
-        reachedCheck = CheckBox(act)
-        reachedCheck.text = "Tell me when the temperature is reached"
-        reachedCheck.isChecked = prefs.getBool("alert_reached", false)
-        reachedCheck.setOnCheckedChangeListener { _, on ->
-            prefs.putBool("alert_reached", on)
-            if (on) askNotificationPermission()
-        }
-        col.addView(reachedCheck)
         overheatCheck = CheckBox(act)
         overheatCheck.text = "Warn when the tip stays 25°C above the target and is not cooling"
         overheatCheck.isChecked = prefs.getBool("alert_overheat", false)
@@ -249,15 +238,6 @@ class ToolsPage(
         }
 
         // alerts
-        val reached = s.reached > 0f
-        if (!reached) {
-            if (wasReached || notReachedSince == 0L) notReachedSince = now
-        }
-        if (reached && !wasReached && notReachedSince != 0L && now - notReachedSince >= 5000 && reachedCheck.isChecked) {
-            alert("Temperature reached", String.format(Locale.US, "%.0f°C", s.temp))
-        }
-        wasReached = reached
-
         // Overheat: the tip stays well above the target and is not cooling down.
         // The target (the "set" in the live data) drops when the iron goes in the stand or to sleep, and the tip then cools
         // for a while above the new, lower target: that is no overheating. Any change of the target restarts the check,
@@ -292,8 +272,6 @@ class ToolsPage(
     fun onDisconnected() {
         resSum = 0.0
         resCount = 0
-        wasReached = false
-        notReachedSince = 0L
         overheatSince = 0L
         overheatAlerted = false
         lastSet = -1f
