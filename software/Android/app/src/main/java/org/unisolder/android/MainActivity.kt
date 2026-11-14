@@ -409,7 +409,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
         items.add("Do not use Bluetooth")
         AlertDialog.Builder(this)
             .setTitle("Bluetooth bridge")
-            .setMessage(if (devs.isEmpty()) "Pair the \"UniSolder\" device in the Android Bluetooth settings first (PIN 1234)." else null)
+            .setMessage(if (devs.isEmpty()) "Pair the \"UniSolder\" device in the Android Bluetooth settings first." else null)
             .setItems(items.toTypedArray()) { _, which ->
                 if (which < devs.size) {
                     link.btAddress = devs[which].address
