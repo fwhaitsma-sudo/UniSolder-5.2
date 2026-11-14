@@ -286,9 +286,10 @@ void TipSaveInstName(int inst){
 
 void TipRefreshName(void){
     t_Tip t;
+    int i;
     TipActName[0] = 0;
     if(TipActInst < TIP_INST && TipActTip < TIP_PER_INST && TipRead(TipActInst, TipActTip, &t)){
-        for(int i = 0; i <= TIP_NAME_LEN; i++) TipActName[i] = t.Name[i];
+        for(i = 0; i <= TIP_NAME_LEN; i++) TipActName[i] = t.Name[i];
     }
 }
 
