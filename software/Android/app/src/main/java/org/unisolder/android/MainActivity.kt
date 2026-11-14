@@ -6,6 +6,8 @@ import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -30,6 +32,7 @@ import java.util.concurrent.Executors
 private const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
 private const val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT
 private const val REQ_HEX = 1
+private const val REQ_BT = 2
 
 class MainActivity : Activity(), DeviceLink.Listener {
     private lateinit var link: DeviceLink
@@ -161,6 +164,10 @@ class MainActivity : Activity(), DeviceLink.Listener {
         connectButton.text = "Connect"
         connectButton.setOnClickListener { link.retry() }
         statusRow.addView(connectButton)
+        val btButton = Button(this)
+        btButton.text = "Bluetooth"
+        btButton.setOnClickListener { chooseBluetooth() }
+        statusRow.addView(btButton)
         root.addView(statusRow)
 
         val content = FrameLayout(this)
@@ -383,6 +390,44 @@ class MainActivity : Activity(), DeviceLink.Listener {
         logScroll.post { logScroll.fullScroll(View.FOCUS_DOWN) }
     }
 
+    // ------------------------------------------------------------------ Bluetooth
+
+    @android.annotation.SuppressLint("MissingPermission")
+    private fun chooseBluetooth() {
+        if (Build.VERSION.SDK_INT >= 31 && checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(android.Manifest.permission.BLUETOOTH_CONNECT), REQ_BT)
+            return
+        }
+        val adapter = android.bluetooth.BluetoothAdapter.getDefaultAdapter()
+        if (adapter == null || !adapter.isEnabled) {
+            showMessage("Bluetooth", "Bluetooth is off or not available on this phone.")
+            return
+        }
+        val devs = adapter.bondedDevices.toList().sortedBy { it.name ?: "" }
+        val items = ArrayList<String>()
+        for (d in devs) items.add((d.name ?: "?") + "\n" + d.address)
+        items.add("Do not use Bluetooth")
+        AlertDialog.Builder(this)
+            .setTitle("Bluetooth bridge")
+            .setMessage(if (devs.isEmpty()) "Pair the \"UniSolder\" device in the Android Bluetooth settings first (PIN 1234)." else null)
+            .setItems(items.toTypedArray()) { _, which ->
+                if (which < devs.size) {
+                    link.btAddress = devs[which].address
+                    Toast.makeText(this, "Connecting to " + (devs[which].name ?: devs[which].address), Toast.LENGTH_SHORT).show()
+                } else {
+                    link.btAddress = ""
+                }
+                link.retry()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQ_BT && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) chooseBluetooth()
+    }
+
     // ------------------------------------------------------------------ device events
 
     override fun onConnection(connected: Boolean, text: String) {
@@ -577,6 +622,10 @@ class MainActivity : Activity(), DeviceLink.Listener {
         val h = hex ?: return
         if (!link.connected) {
             Toast.makeText(this, "The station is not connected", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (link.viaBluetooth) {
+            showMessage("Firmware update", "Firmware can only be updated over the USB cable. Disconnect Bluetooth (or unplug the ESP32 link) and connect the phone with the cable.")
             return
         }
         AlertDialog.Builder(this)

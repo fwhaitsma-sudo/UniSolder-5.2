@@ -87,7 +87,22 @@ class DeviceLink(private val ctx: Context) {
     @Volatile
     var busy = false
 
-    val connected: Boolean get() = hid.connected
+    val connected: Boolean get() = hid.connected || bt.connected
+
+    /** True while the station is reached over Bluetooth (no firmware update then). */
+    val viaBluetooth: Boolean get() = viaBt
+
+    private val bt = BtLink()
+    private val prefs = Prefs(ctx)
+
+    @Volatile
+    private var viaBt = false
+
+    @Volatile
+    private var btConnecting = false
+
+    private fun lowRead(buf: ByteArray, timeoutMs: Int): Int = if (viaBt) bt.read(buf, timeoutMs) else hid.read(buf, timeoutMs)
+    private fun lowWrite(buf: ByteArray): Boolean = if (viaBt) bt.write(buf) else hid.write(buf)
 
     private val usb = ctx.getSystemService(Context.USB_SERVICE) as UsbManager
     private val hid = UsbHid(usb)
@@ -154,6 +169,10 @@ class DeviceLink(private val ctx: Context) {
     fun poll() {
         if (busy) return
         synchronized(connLock) {
+            if (viaBt) {
+                if (!bt.connected) disconnect() else bt.write(ByteArray(64))   // all zero = no-op command that keeps the link active
+                return
+            }
             if (hid.connected) {
                 val d = hid.device
                 if (d == null || !usb.deviceList.containsKey(d.deviceName)) disconnect()
@@ -162,6 +181,7 @@ class DeviceLink(private val ctx: Context) {
             val dev = findDevice()
             if (dev == null) {
                 permissionAsked = null
+                tryBluetooth()
                 return
             }
             if (!usb.hasPermission(dev)) {
@@ -173,6 +193,40 @@ class DeviceLink(private val ctx: Context) {
             }
             connect(dev)
         }
+    }
+
+    /** Address of the chosen Bluetooth bridge, empty = Bluetooth not used. */
+    var btAddress: String
+        get() = prefs.getString("bt_address", "")
+        set(v) = prefs.putString("bt_address", v)
+
+    private fun tryBluetooth() {
+        val addr = btAddress
+        if (addr.isEmpty() || btConnecting) return
+        if (Build.VERSION.SDK_INT >= 31 && ctx.checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            state(false, "Allow Bluetooth access, then tap Bluetooth")
+            return
+        }
+        btConnecting = true
+        state(false, "Connecting over Bluetooth\u2026")
+        Thread {
+            val err = bt.open(addr)
+            synchronized(connLock) {
+                btConnecting = false
+                if (err != null) {
+                    AppLog.warn("Bluetooth: $err")
+                    state(false, "Bluetooth: $err")
+                } else if (hid.connected) {
+                    bt.close()      // USB showed up in the meantime
+                } else {
+                    viaBt = true
+                    feedback.clear()
+                    startRx()
+                    AppLog.info("Connected over Bluetooth")
+                    state(true, "Connected (Bluetooth)")
+                }
+            }
+        }.start()
     }
 
     private fun requestPermission(dev: UsbDevice) {
@@ -199,7 +253,7 @@ class DeviceLink(private val ctx: Context) {
 
     fun disconnect() {
         synchronized(connLock) {
-            val was = hid.connected
+            val was = hid.connected || viaBt
             rxRunning = false
             rxThread?.let {
                 try {
@@ -209,6 +263,8 @@ class DeviceLink(private val ctx: Context) {
             }
             rxThread = null
             hid.close()
+            bt.close()
+            viaBt = false
             if (was) {
                 AppLog.info("Disconnected")
                 state(false, "Not connected")
@@ -259,7 +315,7 @@ class DeviceLink(private val ctx: Context) {
             var fastErrors = 0
             while (rxRunning) {
                 val t0 = System.currentTimeMillis()
-                val n = hid.read(buf, 200)
+                val n = lowRead(buf, 200)
                 if (n >= 64) {
                     fastErrors = 0
                     dispatch(buf.copyOf(64))
@@ -314,7 +370,7 @@ class DeviceLink(private val ctx: Context) {
         val buf = ByteArray(64)
         System.arraycopy(out, 0, buf, 0, minOf(out.size, 64))
         feedback.clear()
-        if (!hid.write(buf)) {
+        if (!lowWrite(buf)) {
             AppLog.warn("TX " + cmdName(out[0]) + " failed")
             return null
         }
