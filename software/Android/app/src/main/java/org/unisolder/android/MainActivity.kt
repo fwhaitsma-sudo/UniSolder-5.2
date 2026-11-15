@@ -58,6 +58,8 @@ class MainActivity : Activity(), DeviceLink.Listener {
     private lateinit var pauseButton: Button
     private var paused = false
     private var sampleCount = 0
+    private var refAdc = Float.NaN
+    private var refRes = Float.NaN
 
     // PID page
     private class PidField(val max: Int, val format: (Int) -> String) {
@@ -474,6 +476,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
         connectButton.visibility = if (connected) View.GONE else View.VISIBLE
         if (connected) {
             chart.clear()
+            refAdc = Float.NaN
             if (!link.busy) {
                 loadPid()
                 controlPage.onConnected()
@@ -497,7 +500,19 @@ class MainActivity : Activity(), DeviceLink.Listener {
         pidTools.onSample(s)
         if (dashboard.visibility == View.VISIBLE) dashboard.update(s, power)
         if (paused) return
-        chart.add(floatArrayOf(s.set, s.temp, power * 5f, s.pidInput))
+        if (refAdc.isNaN()) {
+            refAdc = s.adc
+            refRes = s.resistance
+        }
+        refAdc += (s.adc - refAdc) * 0.01f      // slow reference: the traces show changes around it
+        refRes += (s.resistance - refRes) * 0.01f
+        chart.add(
+            floatArrayOf(
+                s.set, s.temp, power * 5f, s.pidInput, s.avg,
+                250f + (s.adc - refAdc),             // 1 unit = 2 ADC counts
+                250f + (s.resistance - refRes) * 100f // 10 units = 0.1 ohm
+            )
+        )
         if (++sampleCount % 5 == 0) {
             readout.text = String.format(Locale.US, "Set %.0f\u00B0C    Actual %.0f\u00B0C", s.set, s.temp)
             powerBar.progress = Math.round(power)
