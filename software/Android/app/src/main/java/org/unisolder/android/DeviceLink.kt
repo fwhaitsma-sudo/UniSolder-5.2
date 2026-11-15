@@ -100,6 +100,7 @@ class DeviceLink(private val ctx: Context) {
 
     @Volatile
     private var btConnecting = false
+    private var lastBtAttempt = 0L
 
     private fun lowRead(buf: ByteArray, timeoutMs: Int): Int = if (viaBt) bt.read(buf, timeoutMs) else hid.read(buf, timeoutMs)
     private fun lowWrite(buf: ByteArray): Boolean = if (viaBt) bt.write(buf) else hid.write(buf)
@@ -203,6 +204,9 @@ class DeviceLink(private val ctx: Context) {
     private fun tryBluetooth() {
         val addr = btAddress
         if (addr.isEmpty() || btConnecting) return
+        val now = System.currentTimeMillis()
+        if (now - lastBtAttempt < BT_RETRY_MS) return      // do not hammer the radio or flicker the status line
+        lastBtAttempt = now
         if (Build.VERSION.SDK_INT >= 31 && ctx.checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
             state(false, "Allow Bluetooth access, then tap Bluetooth")
             return
@@ -215,7 +219,7 @@ class DeviceLink(private val ctx: Context) {
                 btConnecting = false
                 if (err != null) {
                     AppLog.warn("Bluetooth: $err")
-                    state(false, "Bluetooth: $err")
+                    state(false, "Bluetooth: " + err.take(40))
                 } else if (hid.connected) {
                     bt.close()      // USB showed up in the meantime
                 } else {
@@ -564,6 +568,7 @@ class DeviceLink(private val ctx: Context) {
     }
 
     companion object {
+        const val BT_RETRY_MS = 8000L
         const val SETTINGS_SIZE = 64
         const val SETTINGS_CHUNK = 48
         const val CMD_APP_GET_INFO: Byte = 0x80.toByte()

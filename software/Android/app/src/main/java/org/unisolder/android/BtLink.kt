@@ -37,22 +37,23 @@ class BtLink {
             adapter.getRemoteDevice(address)
         } catch (e: IllegalArgumentException) {
             return "invalid Bluetooth address"
+        } catch (e: SecurityException) {
+            return "permission missing"
         }
         close()
         val s = try {
             dev.createRfcommSocketToServiceRecord(SPP)
         } catch (e: Exception) {
-            return "cannot create the Bluetooth socket: " + e.message
+            return "cannot create the Bluetooth socket"
         }
         try {
-            adapter.cancelDiscovery()
             s.connect()
         } catch (e: Exception) {
             try {
                 s.close()
             } catch (x: Exception) {
             }
-            return "no connection (" + (e.message ?: "failed") + ")"
+            return "no connection" + (if (e is SecurityException) " (permission missing)" else "")
         }
         socket = s
         out = s.outputStream
