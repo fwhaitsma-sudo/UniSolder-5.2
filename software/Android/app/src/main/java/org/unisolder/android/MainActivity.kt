@@ -60,6 +60,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
     private var sampleCount = 0
     private var refAdc = Float.NaN
     private var refRes = Float.NaN
+    private var refWs = 0f
 
     // PID page
     private class PidField(val max: Int, val format: (Int) -> String) {
@@ -503,14 +504,18 @@ class MainActivity : Activity(), DeviceLink.Listener {
         if (refAdc.isNaN()) {
             refAdc = s.adc
             refRes = s.resistance
+            refWs = s.ws0
         }
         refAdc += (s.adc - refAdc) * 0.01f      // slow reference: the traces show changes around it
         refRes += (s.resistance - refRes) * 0.01f
+        refWs += (s.ws0 - refWs) * 0.01f
         chart.add(
             floatArrayOf(
                 s.set, s.temp, power * 5f, s.pidInput, s.avg,
                 250f + (s.adc - refAdc),             // 1 unit = 2 ADC counts
-                250f + (s.resistance - refRes) * 100f // 10 units = 0.1 ohm
+                250f + (s.resistance - refRes) * 100f, // 10 units = 0.1 ohm
+                250f + (s.ws0 - refWs),
+                s.power                                // heater drive flag seen in this sample: 0 or 100
             )
         )
         if (++sampleCount % 5 == 0) {

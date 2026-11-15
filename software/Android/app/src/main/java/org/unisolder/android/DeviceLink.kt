@@ -25,7 +25,9 @@ class Sample(
     /** temperature the PID loop reacts to: smoothed temperature plus the derivative term */
     val pidInput: Float,
     /** heater resistance in ohms (the station sends it times ten) */
-    val resistance: Float
+    val resistance: Float,
+    /** first wave-shaping value of the station (the correction after the heater switched off), 0 = none */
+    val ws0: Float = 0f
 )
 
 class Pid(
@@ -379,7 +381,8 @@ class DeviceLink(private val ctx: Context) {
                     power = if (p.u(14) != 0) 100f else 0f,
                     reached = p.u(31) * 100f,
                     pidInput = p.u(12) * 0.5f + p.u(13) * 128f,
-                    resistance = ((p.u(10) or (p.u(11) shl 8)).toShort().toInt()) / 10f
+                    resistance = ((p.u(10) or (p.u(11) shl 8)).toShort().toInt()) / 10f,
+                    ws0 = (p.u(15) or (p.u(16) shl 8)).toFloat() - 2048f
                 )
                 main.post { listener?.onLive(s) }
             }
