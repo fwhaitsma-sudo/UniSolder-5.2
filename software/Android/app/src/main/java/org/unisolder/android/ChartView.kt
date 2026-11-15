@@ -22,10 +22,10 @@ class ChartView(ctx: Context) : View(ctx) {
         // diagnostics (off by default): the temperature after the station's averaging filter, and the changes of the raw
         // ADC reading and of the measured heater resistance, drawn around the middle of the chart (250)
         Series("Filtered", Color.rgb(224, 224, 224), false),
-        Series("ADC change", Color.rgb(255, 128, 171), false),
-        Series("Heater \u03A9 change", Color.rgb(179, 136, 255), false),
-        Series("Wave shaping", Color.rgb(255, 171, 64), false),
-        Series("Heater flag", Color.rgb(128, 222, 234), false)
+        Series("ADC \u0394", Color.rgb(255, 128, 171), false),
+        Series("\u03A9 \u0394", Color.rgb(179, 136, 255), false),
+        Series("Wave sh.", Color.rgb(255, 171, 64), false),
+        Series("Flag", Color.rgb(128, 222, 234), false)
     )
 
     private var count = 0

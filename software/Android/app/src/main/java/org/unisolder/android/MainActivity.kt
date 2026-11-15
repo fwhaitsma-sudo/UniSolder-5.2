@@ -264,8 +264,9 @@ class MainActivity : Activity(), DeviceLink.Listener {
             val chip = TextView(this)
             chip.text = "● " + s.name
             chip.setTextColor(s.color)
-            chip.textSize = 15f
-            chip.setPadding(dp(8), dp(8), dp(8), dp(8))
+            chip.textSize = 14f
+            chip.setPadding(dp(6), dp(8), dp(6), dp(8))
+            chip.maxLines = 1
             chip.alpha = if (s.visible) 1f else 0.3f
             chip.setOnClickListener {
                 s.visible = !s.visible
