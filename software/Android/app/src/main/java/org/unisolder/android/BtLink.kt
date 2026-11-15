@@ -30,7 +30,7 @@ class BtLink {
 
     /** Returns null when connected, otherwise the reason. Blocks for a few seconds. */
     @SuppressLint("MissingPermission")
-    fun open(address: String): String? {
+    fun open(address: String, pin: String): String? {
         val adapter = BluetoothAdapter.getDefaultAdapter() ?: return "this device has no Bluetooth"
         if (!adapter.isEnabled) return "Bluetooth is off"
         val dev: BluetoothDevice = try {
@@ -55,15 +55,52 @@ class BtLink {
             }
             return "no connection" + (if (e is SecurityException) " (permission missing)" else "")
         }
+        val input = s.inputStream
+        val reply = try {
+            s.outputStream.write(("PIN:" + pin + "\n").toByteArray())
+            s.outputStream.flush()
+            readLine(input, 3000)
+        } catch (e: Exception) {
+            null
+        }
+        when (reply) {
+            "OK" -> {}
+            "NO" -> { close(s); return ERR_WRONG_PIN }
+            "LOCK" -> { close(s); return "locked after wrong PINs, try again in a minute" }
+            else -> { close(s); return "the bridge did not answer (flash the new ESP32 file)" }
+        }
         socket = s
         out = s.outputStream
         frames.clear()
         lastRx = System.currentTimeMillis()
         alive = true
-        val input = s.inputStream
         val t = Thread { readLoop(input) }
         t.isDaemon = true
         t.start()
+        return null
+    }
+
+    private fun close(s: BluetoothSocket) {
+        try {
+            s.close()
+        } catch (e: Exception) {
+        }
+    }
+
+    /** Reads one text line byte by byte (so no frame bytes are consumed); null on timeout. */
+    private fun readLine(input: InputStream, timeoutMs: Int): String? {
+        val end = System.currentTimeMillis() + timeoutMs
+        val sb = StringBuilder()
+        while (System.currentTimeMillis() < end) {
+            if (input.available() > 0) {
+                val c = input.read()
+                if (c < 0) return null
+                if (c == '\n'.code) return sb.toString().trim()
+                if (sb.length < 16) sb.append(c.toChar())
+            } else {
+                Thread.sleep(20)
+            }
+        }
         return null
     }
 
@@ -147,6 +184,7 @@ class BtLink {
     }
 
     companion object {
+        const val ERR_WRONG_PIN = "wrong PIN"
         private const val START: Byte = 0x7E
         private const val FRAME = 66
         /** the station sends live data about 10 times a second while the link is kept alive */
