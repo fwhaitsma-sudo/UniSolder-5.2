@@ -51,6 +51,11 @@ void PIDTasks(){
         if(a>b)a=b;\
     }
 
+#define RT_GLITCH   16      //about 4 degrees C
+#define RT_ACCEPT   100     //readings in a row before a large change is believed
+static int RTInit = 0;
+static int RTOutCnt = 0;
+
 void PID(int PIDStep) {
     int i, w, AVG;
     INT32 dw, pdt;    
@@ -81,8 +86,28 @@ void PID(int PIDStep) {
         dw *= 147;
         dw >>= 8;
         dw -= 200;
-        RTAvg -= intshr(RTAvg, ADCAVG);
-        RTAvg += dw;
+        //dw is about 4 per degree C. A single bad conversion of the room sensor used to move the displayed temperature by
+        //several degrees (step, then decay through the average). Readings far from the running average are ignored,
+        //unless they stay there for RT_ACCEPT readings in a row (then the room temperature really changed).
+        if(!RTInit){
+            RTAvg = dw << ADCAVG;
+            RTInit = 1;
+            RTOutCnt = 0;
+        }
+        else{
+            int ref = intshr(RTAvg, ADCAVG);
+            if(dw > ref + RT_GLITCH || dw < ref - RT_GLITCH){
+                if(++RTOutCnt >= RT_ACCEPT){
+                    RTAvg = dw << ADCAVG;
+                    RTOutCnt = 0;
+                }
+            }
+            else{
+                RTOutCnt = 0;
+                RTAvg -= intshr(RTAvg, ADCAVG);
+                RTAvg += dw;
+            }
+        }
         CRTemp = intshr(RTAvg, ADCAVG + 1);
     }
 /************************************************************************************/
