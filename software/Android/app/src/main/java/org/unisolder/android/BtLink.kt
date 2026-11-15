@@ -167,6 +167,20 @@ class BtLink {
         }
     }
 
+    /** Sends text (a control line for the bridge, outside of any frame). */
+    @Synchronized
+    fun writeText(t: String): Boolean {
+        val o = out ?: return false
+        return try {
+            o.write(t.toByteArray())
+            o.flush()
+            true
+        } catch (e: Exception) {
+            alive = false
+            false
+        }
+    }
+
     /** One 64-byte packet, or -1 on timeout or when the link is gone. */
     fun read(buf: ByteArray, timeoutMs: Int): Int {
         val p = frames.poll(timeoutMs.toLong(), TimeUnit.MILLISECONDS) ?: return -1

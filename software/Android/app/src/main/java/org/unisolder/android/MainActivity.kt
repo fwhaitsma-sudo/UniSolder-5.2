@@ -407,6 +407,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
         val items = ArrayList<String>()
         for (d in devs) items.add((d.name ?: "?") + "\n" + d.address)
         items.add("Do not use Bluetooth")
+        if (link.viaBluetooth) items.add("Change the bridge PIN\u2026")
         AlertDialog.Builder(this)
             .setTitle("Bluetooth bridge")
             .setMessage(if (devs.isEmpty()) "Pair the \"UniSolder\" device in the Android Bluetooth settings first." else null)
@@ -414,9 +415,31 @@ class MainActivity : Activity(), DeviceLink.Listener {
                 if (which < devs.size) {
                     link.btAddress = devs[which].address
                     askPin()
+                } else if (which == devs.size + 1) {
+                    askNewPin()
                 } else {
                     link.btAddress = ""
                     link.retry()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun askNewPin() {
+        val input = android.widget.EditText(this)
+        input.inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
+        AlertDialog.Builder(this)
+            .setTitle("New Bluetooth PIN")
+            .setMessage("4 to 8 digits. The app reconnects with the new PIN.")
+            .setView(input)
+            .setPositiveButton("Change") { _, _ ->
+                val pin = input.text.toString().trim()
+                io.execute {
+                    val ok = link.btChangePin(pin)
+                    runOnUiThread {
+                        if (!ok) Toast.makeText(this, "PIN not changed (4 to 8 digits, Bluetooth must be connected)", Toast.LENGTH_LONG).show()
+                    }
                 }
             }
             .setNegativeButton("Cancel", null)
