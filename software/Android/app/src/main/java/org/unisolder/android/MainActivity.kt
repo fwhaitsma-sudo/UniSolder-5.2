@@ -413,10 +413,26 @@ class MainActivity : Activity(), DeviceLink.Listener {
             .setItems(items.toTypedArray()) { _, which ->
                 if (which < devs.size) {
                     link.btAddress = devs[which].address
-                    Toast.makeText(this, "Connecting to " + (devs[which].name ?: devs[which].address), Toast.LENGTH_SHORT).show()
+                    askPin()
                 } else {
                     link.btAddress = ""
+                    link.retry()
                 }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun askPin() {
+        val input = android.widget.EditText(this)
+        input.inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
+        input.setText(link.btPin)
+        AlertDialog.Builder(this)
+            .setTitle("Bluetooth PIN")
+            .setMessage("PIN of the UniSolder Bluetooth bridge")
+            .setView(input)
+            .setPositiveButton("Connect") { _, _ ->
+                link.btPin = input.text.toString().trim()
                 link.retry()
             }
             .setNegativeButton("Cancel", null)

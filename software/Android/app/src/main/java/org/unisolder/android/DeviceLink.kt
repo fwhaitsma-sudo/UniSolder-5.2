@@ -201,9 +201,21 @@ class DeviceLink(private val ctx: Context) {
         get() = prefs.getString("bt_address", "")
         set(v) = prefs.putString("bt_address", v)
 
+    /** PIN of the Bluetooth bridge. Setting it also allows connecting again after a rejected PIN. */
+    var btPin: String
+        get() = prefs.getString("bt_pin", "")
+        set(v) {
+            prefs.putString("bt_pin", v)
+            btPinRejected = false
+            lastBtAttempt = 0
+        }
+
+    @Volatile
+    private var btPinRejected = false
+
     private fun tryBluetooth() {
         val addr = btAddress
-        if (addr.isEmpty() || btConnecting) return
+        if (addr.isEmpty() || btConnecting || btPinRejected) return
         val now = System.currentTimeMillis()
         if (now - lastBtAttempt < BT_RETRY_MS) return      // do not hammer the radio or flicker the status line
         lastBtAttempt = now
@@ -214,11 +226,12 @@ class DeviceLink(private val ctx: Context) {
         btConnecting = true
         state(false, "Connecting over Bluetooth\u2026")
         Thread {
-            val err = bt.open(addr)
+            val err = bt.open(addr, btPin)
             synchronized(connLock) {
                 btConnecting = false
                 if (err != null) {
                     AppLog.warn("Bluetooth: $err")
+                    if (err == BtLink.ERR_WRONG_PIN) btPinRejected = true     // never retry on its own: repeated wrong PINs lock the bridge
                     state(false, "Bluetooth: " + err.take(40))
                 } else if (hid.connected) {
                     bt.close()      // USB showed up in the meantime
