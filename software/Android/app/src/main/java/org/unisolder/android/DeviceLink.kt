@@ -213,6 +213,17 @@ class DeviceLink(private val ctx: Context) {
     @Volatile
     private var btPinRejected = false
 
+    /** Changes the PIN stored in the bridge (4 to 8 digits). Only over an open Bluetooth link; reconnects with the new PIN. */
+    fun btChangePin(newPin: String): Boolean {
+        if (!viaBt || !Regex("[0-9]{4,8}").matches(newPin)) return false
+        if (!bt.writeText("#SETPIN:$newPin\n")) return false
+        Thread.sleep(400)
+        AppLog.info("Bluetooth PIN changed")
+        btPin = newPin
+        disconnect()
+        return true
+    }
+
     private fun tryBluetooth() {
         val addr = btAddress
         if (addr.isEmpty() || btConnecting || btPinRejected) return
