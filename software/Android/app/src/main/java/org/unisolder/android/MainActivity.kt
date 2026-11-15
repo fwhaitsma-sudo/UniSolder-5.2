@@ -513,7 +513,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
         chart.add(
             floatArrayOf(
                 s.set, s.temp, power * 5f, s.pidInput, s.avg,
-                250f + (s.adc - refAdc),             // 1 unit = 2 ADC counts
+                250f + (s.adc - refAdc) * 8f,         // 8 units = 1 ADC count (the trace is the ADC value divided by 2)
                 250f + (s.resistance - refRes) * 100f, // 10 units = 0.1 ohm
                 250f + (s.ws0 - refWs),
                 s.power                                // heater drive flag seen in this sample: 0 or 100
