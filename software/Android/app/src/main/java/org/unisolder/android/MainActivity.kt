@@ -395,14 +395,21 @@ class MainActivity : Activity(), DeviceLink.Listener {
         logScroll.post { logScroll.fullScroll(View.FOCUS_DOWN) }
     }
 
-    /** Gives every button without margins a small gap, so neighbouring buttons do not run into each other. */
+    /** Makes the buttons a little smaller and gives each a gap, so neighbouring buttons do not run into each other. */
     private fun spaceButtons(v: View) {
         if (v is Button) {
             val lp = v.layoutParams
             if (lp is ViewGroup.MarginLayoutParams && lp.leftMargin == 0 && lp.rightMargin == 0 && lp.topMargin == 0 && lp.bottomMargin == 0) {
-                lp.setMargins(dp(4), dp(4), dp(4), dp(4))
+                lp.setMargins(dp(6), dp(6), dp(6), dp(6))
                 v.layoutParams = lp
             }
+            v.textSize = minOf(v.textSize / resources.displayMetrics.scaledDensity, 14f)
+            v.minHeight = dp(40)
+            v.minimumHeight = dp(40)
+            v.minWidth = 0
+            v.minimumWidth = 0
+            v.setPadding(dp(8), dp(4), dp(8), dp(4))
+            if (v.text.length <= 12) v.maxLines = 1
         }
         if (v is ViewGroup) for (i in 0 until v.childCount) spaceButtons(v.getChildAt(i))
     }
