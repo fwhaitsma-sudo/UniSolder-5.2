@@ -198,7 +198,12 @@ class MainActivity : Activity(), DeviceLink.Listener {
             b.setPadding(dp(2), 0, dp(2), 0)
             b.setOnClickListener { showPage(i) }
             tabs.add(b)
-            tabBar.addView(b, LinearLayout.LayoutParams(0, WRAP, 1f))
+            b.ellipsize = null
+            b.maxLines = 1
+            // content-sized with the spare width shared out: a label is never cut short
+            val tlp = LinearLayout.LayoutParams(WRAP, WRAP, 1f)
+            tlp.setMargins(dp(2), dp(2), dp(2), dp(2))
+            tabBar.addView(b, tlp)
         }
         root.addView(tabBar)
 
