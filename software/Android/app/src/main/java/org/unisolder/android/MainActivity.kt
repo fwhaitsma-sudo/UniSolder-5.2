@@ -206,6 +206,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
         frame.addView(root, FrameLayout.LayoutParams(MATCH, MATCH))
         frame.addView(dashboard, FrameLayout.LayoutParams(MATCH, MATCH))
         setContentView(frame)
+        spaceButtons(frame)
         toolsPage.onRecordingChanged = { on -> recordButton.text = if (on) "Stop rec" else "Record" }
         showPage(0)
         applyPid(null)
@@ -392,6 +393,18 @@ class MainActivity : Activity(), DeviceLink.Listener {
     private fun appendLog(line: String) {
         if (logView.length() > 30000) logView.text = AppLog.text() else logView.append("\n" + line)
         logScroll.post { logScroll.fullScroll(View.FOCUS_DOWN) }
+    }
+
+    /** Gives every button without margins a small gap, so neighbouring buttons do not run into each other. */
+    private fun spaceButtons(v: View) {
+        if (v is Button) {
+            val lp = v.layoutParams
+            if (lp is ViewGroup.MarginLayoutParams && lp.leftMargin == 0 && lp.rightMargin == 0 && lp.topMargin == 0 && lp.bottomMargin == 0) {
+                lp.setMargins(dp(4), dp(4), dp(4), dp(4))
+                v.layoutParams = lp
+            }
+        }
+        if (v is ViewGroup) for (i in 0 until v.childCount) spaceButtons(v.getChildAt(i))
     }
 
     // ------------------------------------------------------------------ Bluetooth
