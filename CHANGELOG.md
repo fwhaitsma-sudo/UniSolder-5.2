@@ -39,6 +39,13 @@ Only what is in the firmware now is listed. Reverted and superseded changes are 
 - **Automatic switching on 5.2C boards:** lifting an iron from its stand makes it the active one. (36e4dd2)
 - **Iron re-identification on switch:** switching irons runs the normal identification again, which fixed intermittent single-iron recognition. (75a1f28)
 
+## Remote control and wireless link
+
+- **Remote control commands:** the station answers USB commands to read its state, set the temperature (same limits as the knob), select a preset, sleep/wake, switch iron, and read/write the settings block (backup and restore).
+- **UART2 link for a Bluetooth bridge:** the same commands also work over UART2 (RF4 receive, RF5 transmit, 115200 baud), framed with a CRC. Live data is sent only while the app is sending. Firmware update is only possible over USB.
+- **ESP32 Bluetooth bridge** (`software/esp32/UniSolderBridge`): Bluetooth Classic link between phone and station, protected by a PIN (default 0000, changeable from the app). The workflow "Build ESP32 bridge" builds the file to flash.
+- **Room sensor glitch filter:** single bad readings of the room temperature sensor (more than about 4 degrees from the running average) are ignored, which removes short spikes in the displayed temperature.
+
 ## Windows application build
 
 - **Build from the solution file** (`UniSolder.sln`, Release). (a242419)
@@ -48,6 +55,7 @@ Only what is in the firmware now is listed. Reverted and superseded changes are 
 ## Android application
 
 - **Android version of the Windows application** (`software/Android`, needs a phone with USB host / OTG): connects to the station over USB and has three tabs. *Live* shows a scrolling temperature chart (set temperature, actual temperature, duty, power, reached, filtered and ADC, each switchable, with pause). *PID* reads and sets Kp, Ki, DGain, OVFGain and Gain. *Firmware* checks a `.hex` file and updates the station through the bootloader, with a confirmation and a progress bar.
+- **Later additions:** *Control* tab (set temperature, presets, sleep, switch iron, station info, settings backup/restore), *Tools* tab (session recording with CSV export, tip health, alerts, bench dashboard), PID step-response analysis and saved PID sets, extra diagnostic chart traces, and a Bluetooth connection with PIN to the ESP32 bridge.
 - **App icon:** a yellow U that bends into a temperature curve up to a dashed set-temperature line.
 - **Build:** the workflow "Build Android app" builds the APK and publishes it as a GitHub Release. Builds are signed with a fixed key so each can be installed over the previous one.
 
