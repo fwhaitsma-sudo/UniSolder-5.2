@@ -265,13 +265,13 @@ class MainActivity : Activity(), DeviceLink.Listener {
         page.addView(chart, LinearLayout.LayoutParams(MATCH, 0, 1f))
 
         val grid = GridLayout(this)
-        grid.columnCount = 4
+        grid.columnCount = 5
         for (s in chart.series) {
             val chip = TextView(this)
             chip.text = "● " + s.name
             chip.setTextColor(s.color)
-            chip.textSize = 14f
-            chip.setPadding(dp(6), dp(8), dp(6), dp(8))
+            chip.textSize = 13f
+            chip.setPadding(dp(5), dp(8), dp(5), dp(8))
             chip.maxLines = 1
             chip.alpha = if (s.visible) 1f else 0.3f
             chip.setOnClickListener {
