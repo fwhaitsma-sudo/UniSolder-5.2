@@ -124,13 +124,13 @@ static int HandleCommand(void){
                     done = 1;
                 }
                 break;
-            case 0x80: //application info: [version minor, version major, board version, protocol (1 = remote control + settings)]
+            case 0x80: //application info: [version minor, version major, board version, protocol (1 = remote control + settings, 2 = PID save, 3 = live settings 0x40/0x41)]
                 if(!TxBusy()){
                     cTX->Command = 0x80;
                     cTX->Data[0] = VERSION_MINOR;
                     cTX->Data[1] = VERSION_MAJOR;
                     cTX->Data[2] = BoardVersion;
-                    cTX->Data[3] = 2;
+                    cTX->Data[3] = 3;
                     TxSend();
                     done = 1;
                 }
@@ -211,6 +211,27 @@ static int HandleCommand(void){
                 if(!TxBusy()){
                     cTX->Command = 0x17;
                     cTX->Data[0] = IronPidIsSaved();
+                    TxSend();
+                    done = 1;
+                }
+                break;
+            case 0x40: //read all settings in menu units; replies 29 x u16 (setting 0..28)
+                if(!TxBusy()){
+                    int i;
+                    cTX->Command = 0x40;
+                    for(i = 0; i < 29; i++) Put16(i * 2, RemoteGetParam(i));
+                    TxSend();
+                    done = 1;
+                }
+                break;
+            case 0x41: //set one setting: [id, value lo, value hi]; replies [id, status, value lo, value hi] (status 0 done, 1 not settable, 2 range, 3 station in menu)
+                if(!TxBusy()){
+                    int p = cRX->Data[0];
+                    int st = RemoteSetParam(p, cRX->Data[1] | (cRX->Data[2] << 8));
+                    cTX->Command = 0x41;
+                    cTX->Data[0] = p;
+                    cTX->Data[1] = st;
+                    Put16(2, RemoteGetParam(p));
                     TxSend();
                     done = 1;
                 }

@@ -301,6 +301,42 @@ int RemoteSwitchIron(void){
     return pars.ActIron;
 }
 
+//Settings from the phone or PC. Values are in menu units: degrees for T1-T4, HOLDER T and SLEEP T, the raw value otherwise.
+static int RemoteParAllowed(int p){
+    return (p >= 0 && p <= 14) || p == 18 || p == 19 || p == 22 || p == 27 || p == 28;
+}
+
+unsigned int RemoteGetParam(int p){
+    if(p < 0 || p >= 29) return 0;
+    return (unsigned int)ParFine(p);
+}
+
+//Same rules as confirming in the menu. Returns 0 = done, 1 = not settable, 2 = out of range, 3 = station is in its own menu.
+int RemoteSetParam(int p, unsigned int v){
+    int sc, cur;
+    if(!RemoteParAllowed(p)) return 1;
+    if(!(CMode == DEFAULT_MENU || CMode == SET_TEMPERATURE || CMode == RESET_TEMPERATURE || CMode == STANDBY)) return 3;
+    sc = FINE_PAR(p) ? 2 : 1;
+    cur = ParFine(p);
+    if(PRESET_PAR(p)){
+        if(v != 0 && (v < MINTEMP * 2 || v > (unsigned int)ParDef[p].Max * sc)) return 2;
+        if(v == 0 && cur != 0){  //turning a preset OFF keeps its last temperature for turning it on again
+            int sl = PRESET_SLOT(p);
+            pars.RTempMem[sl] = cur >> 1;
+            if(cur & 1) ParOdd |= (1 << (8 + sl)); else ParOdd &= ~(1 << (8 + sl));
+        }
+    }
+    else if(v < (unsigned int)ParDef[p].Min * sc || v > (unsigned int)ParDef[p].Max * sc) return 2;
+    if(FINE_PAR(p)){
+        SetParFine(p, (int)v);
+        SaveParOdd();
+    }
+    else pars.b[p] = (UINT8)v;
+    SavePars();
+    RemoteTouch();
+    return 0;
+}
+
 void RemoteGetState(RemoteState * s){
     int i;
     s->Set = TTemp;

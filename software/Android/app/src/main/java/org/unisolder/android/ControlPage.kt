@@ -28,6 +28,8 @@ import java.util.concurrent.ExecutorService
 /** The Control tab: set temperature, presets, sleep, switch iron, station info, settings backup and restore. */
 class ControlPage(private val act: Activity, private val link: DeviceLink, private val io: ExecutorService) {
     val view: View
+    private val settings = SettingsPage(act, link, io)
+    private val settingsButton: Button
     private val ui = Handler(Looper.getMainLooper())
 
     private var info: AppInfo? = null
@@ -157,6 +159,11 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
         ironButton.setOnClickListener { switchIron() }
         col.addView(ironButton, LinearLayout.LayoutParams(MATCH_P, WRAP_P))
 
+        settingsButton = Button(act)
+        settingsButton.text = "Station settings"
+        settingsButton.setOnClickListener { openSettings(true) }
+        col.addView(settingsButton, LinearLayout.LayoutParams(MATCH_P, WRAP_P).also { it.topMargin = dp(16) })
+
         val backupTitle = TextView(act)
         backupTitle.text = "Settings backup"
         backupTitle.textSize = 18f
@@ -176,7 +183,12 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
         col.addView(restoreButton, LinearLayout.LayoutParams(MATCH_P, WRAP_P))
 
         scroll.addView(col, ViewGroup.LayoutParams(MATCH_P, WRAP_P))
-        view = scroll
+        val frame = android.widget.FrameLayout(act)
+        frame.addView(scroll, ViewGroup.LayoutParams(MATCH_P, MATCH_P))
+        frame.addView(settings.view, ViewGroup.LayoutParams(MATCH_P, MATCH_P))
+        settings.view.visibility = View.GONE
+        settings.onBack = { openSettings(false) }
+        view = frame
         enableControls(false)
         showInfo()
         ui.post(pollTick)
@@ -204,7 +216,14 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
         }
     }
 
+    private fun openSettings(open: Boolean) {
+        settings.view.visibility = if (open) View.VISIBLE else View.GONE
+        if (open) settings.reload()
+    }
+
     fun onDisconnected() {
+        settings.onDisconnected()
+        openSettings(false)
         info = null
         state = null
         showInfo()
@@ -245,6 +264,7 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
         for (i in presetButtons.indices) presetButtons[i].isEnabled = canSet && s != null && s.presets[i] != 0
         sleepButton.isEnabled = on && s != null && !s.inMenu
         saveButton.isEnabled = on
+        settingsButton.isEnabled = on && (info?.protocol ?: 0) >= 3
         restoreButton.isEnabled = on
     }
 
