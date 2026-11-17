@@ -404,8 +404,11 @@ class MainActivity : Activity(), DeviceLink.Listener {
     private fun spaceButtons(v: View) {
         if (v is Button) {
             val lp = v.layoutParams
-            if (lp is ViewGroup.MarginLayoutParams && lp.leftMargin == 0 && lp.rightMargin == 0 && lp.topMargin == 0 && lp.bottomMargin == 0) {
-                lp.setMargins(dp(6), dp(6), dp(6), dp(6))
+            if (lp is ViewGroup.MarginLayoutParams) {
+                // every button gets at least this much space on each side (the tab buttons have 2 dp each side)
+                val none = lp.leftMargin == 0 && lp.rightMargin == 0 && lp.topMargin == 0 && lp.bottomMargin == 0
+                val m = dp(if (none) 6 else 4)
+                lp.setMargins(maxOf(lp.leftMargin, m), maxOf(lp.topMargin, m), maxOf(lp.rightMargin, m), maxOf(lp.bottomMargin, m))
                 v.layoutParams = lp
             }
             v.textSize = minOf(v.textSize / resources.displayMetrics.scaledDensity, 14f)
