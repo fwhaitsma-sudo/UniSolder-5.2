@@ -42,7 +42,8 @@ jobs:
         name: Unisolder-WindowsApp-net10
         path: software/PC/publish
         if-no-files-found: error
-    # Pre-release with the exe, so it can be downloaded without a GitHub login (not for display-step: those are released by hand)
+    # Pre-release with the whole publish folder as a zip, so it can be downloaded without a GitHub login
+    # (not for display-step: those are released by hand)
     - name: Publish pre-release
       if: github.event_name == 'push'
       shell: bash
@@ -50,8 +51,9 @@ jobs:
         GH_TOKEN: ${{ github.token }}
       run: |
         tag="win-$(date -u +%Y%m%d-%H%M)-$(echo $GITHUB_SHA | cut -c1-7)"
-        cp "$(ls software/PC/publish/*.exe | head -n 1)" "UniSolder-windows-$tag.exe"
-        gh release create "$tag" "UniSolder-windows-$tag.exe" --prerelease \
+        ls -la software/PC/publish | head -50
+        pwsh -Command "Compress-Archive -Path software/PC/publish/* -DestinationPath UniSolder-windows-$tag.zip"
+        gh release create "$tag" "UniSolder-windows-$tag.zip" --prerelease \
           --title "Windows app $tag" \
-          --notes "Windows app built from commit $GITHUB_SHA on ${GITHUB_REF_NAME}. Single exe, runs on Windows x64 without installing .NET." \
+          --notes "Windows app built from commit $GITHUB_SHA on ${GITHUB_REF_NAME}. Unzip and run UniSolder.exe on Windows x64 (.NET is included)." \
           --target "$GITHUB_SHA"
