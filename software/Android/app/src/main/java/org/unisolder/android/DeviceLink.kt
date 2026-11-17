@@ -588,6 +588,19 @@ class DeviceLink(private val ctx: Context) {
     /** True when the station holds saved PID values for the connected iron, null = no answer. */
     fun pidSaved(): Boolean? = send(byteArrayOf(CMD_PID_SAVED), 1000)?.let { it.u(0) != 0 }
 
+    /** All station settings (0..28) in menu units: degrees for T1-T4, HOLDER T and SLEEP T, raw otherwise. Needs protocol 3. */
+    fun getParams(): IntArray? {
+        val r = send(byteArrayOf(CMD_GET_PARAMS), 1000) ?: return null
+        return IntArray(29) { r.u16(it * 2) }
+    }
+
+    /** Sets one setting. Returns Pair(status, value now in the station): status 0 done, 1 not settable, 2 out of range, 3 station is in its menu. */
+    fun setParam(id: Int, value: Int): Pair<Int, Int>? {
+        val r = send(byteArrayOf(CMD_SET_PARAM, id.toByte(), (value and 255).toByte(), ((value shr 8) and 255).toByte()), 1500) ?: return null
+        AppLog.info("Setting " + id + " = " + value + " -> status " + r.u(1) + ", now " + r.u16(2))
+        return Pair(r.u(1), r.u16(2))
+    }
+
     /** The 64 settings bytes of the station (the pincode is left out by the firmware), or null. */
     fun readSettings(): ByteArray? {
         val out = ByteArray(SETTINGS_SIZE)
@@ -637,6 +650,8 @@ class DeviceLink(private val ctx: Context) {
         const val CMD_PID_SAVE: Byte = 0x15
         const val CMD_PID_CLEAR: Byte = 0x16
         const val CMD_PID_SAVED: Byte = 0x17
+        const val CMD_GET_PARAMS: Byte = 0x40
+        const val CMD_SET_PARAM: Byte = 0x41
         const val CMD_PRESET: Byte = 0x12
         const val CMD_SLEEP: Byte = 0x13
         const val CMD_SWITCH_IRON: Byte = 0x14
