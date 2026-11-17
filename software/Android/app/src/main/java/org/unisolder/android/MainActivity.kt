@@ -59,7 +59,6 @@ class MainActivity : Activity(), DeviceLink.Listener {
     private var paused = false
     private var sampleCount = 0
     private var refAdc = Float.NaN
-    private var refRes = Float.NaN
     private var refWs = 0f
 
     // PID page
@@ -412,12 +411,14 @@ class MainActivity : Activity(), DeviceLink.Listener {
                 v.layoutParams = lp
             }
             v.textSize = minOf(v.textSize / resources.displayMetrics.scaledDensity, 14f)
-            v.minHeight = dp(40)
-            v.minimumHeight = dp(40)
+            if (v.tag != "multiline") {
+                v.minHeight = dp(40)
+                v.minimumHeight = dp(40)
+            }
             v.minWidth = 0
             v.minimumWidth = 0
             v.setPadding(dp(8), dp(4), dp(8), dp(4))
-            if (v.text.length <= 12) v.maxLines = 1
+            if (v.tag != "multiline" && v.text.length <= 12) v.maxLines = 1
         }
         if (v is ViewGroup) for (i in 0 until v.childCount) spaceButtons(v.getChildAt(i))
     }
@@ -532,17 +533,15 @@ class MainActivity : Activity(), DeviceLink.Listener {
         if (paused) return
         if (refAdc.isNaN()) {
             refAdc = s.adc
-            refRes = s.resistance
             refWs = s.ws0
         }
         refAdc += (s.adc - refAdc) * 0.01f      // slow reference: the traces show changes around it
-        refRes += (s.resistance - refRes) * 0.01f
         refWs += (s.ws0 - refWs) * 0.01f
         chart.add(
             floatArrayOf(
                 s.set, s.temp, power * 5f, s.pidInput, s.avg,
                 250f + (s.adc - refAdc) * 8f,         // 8 units = 1 ADC count (the trace is the ADC value divided by 2)
-                250f + (s.resistance - refRes) * 100f, // 10 units = 0.1 ohm
+                s.resistance,                         // heater resistance in ohm, drawn on the right axis
                 250f + (s.ws0 - refWs),
                 s.power                                // heater drive flag seen in this sample: 0 or 100
             )
