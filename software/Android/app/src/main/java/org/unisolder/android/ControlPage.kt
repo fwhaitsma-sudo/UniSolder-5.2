@@ -3,6 +3,11 @@ package org.unisolder.android
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
+import android.graphics.Typeface
+import android.text.Spannable
+import android.text.SpannableString
+import android.text.style.RelativeSizeSpan
+import android.text.style.StyleSpan
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
@@ -128,6 +133,10 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
         for (i in 0 until 4) {
             val b = Button(act)
             b.text = "T" + (i + 1)
+            b.tag = "multiline"      // spaceButtons() leaves these two-line buttons alone
+            b.maxLines = 2
+            b.minHeight = dp(60)
+            b.minimumHeight = dp(60)
             b.setOnClickListener { selectPreset(i) }
             presetButtons.add(b)
             val lp = GridLayout.LayoutParams()
@@ -239,6 +248,14 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
         restoreButton.isEnabled = on
     }
 
+    /** Two centred lines: the preset name small above, the temperature (or OFF) in bold below. */
+    private fun presetLabel(name: String, value: String): CharSequence {
+        val sp = SpannableString(name + "\n" + value)
+        sp.setSpan(RelativeSizeSpan(0.8f), 0, name.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        sp.setSpan(StyleSpan(Typeface.BOLD), name.length + 1, sp.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        return sp
+    }
+
     private fun degrees(c: Int, s: DeviceState): String =
         if (s.fahrenheit) String.format(Locale.US, "%d°F", Math.round(c * 1.8f + 32f)) else "$c°C"
 
@@ -256,7 +273,7 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
             showTemp(s.set, s)
         }
         for (i in 0 until 4) {
-            presetButtons[i].text = "T" + (i + 1) + "\n" + (if (s.presets[i] == 0) "OFF" else degrees(s.presets[i], s))
+            presetButtons[i].text = presetLabel("T" + (i + 1), if (s.presets[i] == 0) "OFF" else degrees(s.presets[i], s))
         }
         sleepButton.text = if (s.standby) "Wake up" else "Sleep"
         ironButton.visibility = if (s.twoIrons) View.VISIBLE else View.GONE
