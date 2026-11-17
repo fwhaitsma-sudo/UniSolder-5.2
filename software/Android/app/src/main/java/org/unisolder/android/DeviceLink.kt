@@ -211,6 +211,14 @@ class DeviceLink(private val ctx: Context) {
         }
     }
 
+    /**
+     * Bluetooth needs extra hardware (the ESP32 bridge), so it is off until the user unlocks it on the More tab.
+     * Users who already chose a bridge before this switch existed keep Bluetooth on.
+     */
+    var btEnabled: Boolean
+        get() = prefs.getBool("bt_enabled", btAddress.isNotEmpty())
+        set(v) = prefs.putBool("bt_enabled", v)
+
     /** Address of the chosen Bluetooth bridge, empty = Bluetooth not used. */
     var btAddress: String
         get() = prefs.getString("bt_address", "")
@@ -253,7 +261,7 @@ class DeviceLink(private val ctx: Context) {
 
     private fun tryBluetooth() {
         val addr = btAddress
-        if (addr.isEmpty() || btConnecting || btPinRejected) return
+        if (!btEnabled || addr.isEmpty() || btConnecting || btPinRejected) return
         val now = System.currentTimeMillis()
         if (now - lastBtAttempt < BT_RETRY_MS) return      // do not hammer the radio or flicker the status line
         lastBtAttempt = now
