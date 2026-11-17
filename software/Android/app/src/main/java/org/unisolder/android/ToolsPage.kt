@@ -174,8 +174,21 @@ class ToolsPage(
                         val delete = Button(act)
                         delete.text = "Delete"
                         delete.setOnClickListener { confirmDelete(f) }
-                        row.addView(export, LinearLayout.LayoutParams(0, WRAP_P, 1f))
-                        row.addView(delete, LinearLayout.LayoutParams(0, WRAP_P, 1f))
+                        // content-sized buttons with a clear gap (this row is built after the app-wide spacing pass)
+                        for (b in listOf(export, delete)) {
+                            b.textSize = 14f
+                            b.minWidth = dp(110)
+                            b.minimumWidth = dp(110)
+                            b.minHeight = dp(40)
+                            b.minimumHeight = dp(40)
+                            b.setPadding(dp(16), dp(4), dp(16), dp(4))
+                        }
+                        val glp = LinearLayout.LayoutParams(WRAP_P, WRAP_P)
+                        glp.setMargins(dp(4), dp(6), dp(8), dp(6))
+                        row.addView(export, glp)
+                        val dlp = LinearLayout.LayoutParams(WRAP_P, WRAP_P)
+                        dlp.setMargins(dp(8), dp(6), dp(4), dp(6))
+                        row.addView(delete, dlp)
                         sessionsBox.addView(row)
                     }
                 }
