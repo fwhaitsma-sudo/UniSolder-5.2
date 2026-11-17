@@ -1,6 +1,8 @@
 # UniSolder - The universal soldering controller  ![License CC-BY-4.0](https://img.shields.io/badge/License-CC--BY--4.0-green.svg)
 Control almost any low voltage soldering instrument
 
+> **Current firmware and apps (fork fwhaitsma-sudo):** download the firmware, the Android app and the ESP32 Bluetooth bridge file from the **Releases** tab, always the newest `fw-…` release for the firmware. The `.hex` files in the `dist/` folders of this repository are old builds of the original project and do **not** have the enhancements listed in [CHANGELOG.md](CHANGELOG.md). Flash a release file with the app's Firmware tab (USB).
+
 [![Windows Unisolder application](https://github.com/PBrunot/UniSolder-5.2/actions/workflows/build-windows.yaml/badge.svg)](https://github.com/PBrunot/UniSolder-5.2/actions/workflows/build-windows.yaml)
 [![Unisolder firmware](https://github.com/PBrunot/UniSolder-5.2/actions/workflows/build-firmware.yaml/badge.svg)](https://github.com/PBrunot/UniSolder-5.2/actions/workflows/build-firmware.yaml)
 
