@@ -27,6 +27,19 @@ public class UniSolderComm
         APP_SET_PID = 3,
         APP_GET_PID = 4,
 
+        //remote control and settings (firmware protocol 1 and later)
+        REMOTE_GET_STATE = 0x10,
+        REMOTE_SET_TEMP = 0x11,
+        REMOTE_PRESET = 0x12,
+        REMOTE_SLEEP = 0x13,
+        REMOTE_SWITCH_IRON = 0x14,
+        REMOTE_PID_SAVE = 0x15,
+        REMOTE_PID_CLEAR = 0x16,
+        REMOTE_PID_SAVED = 0x17,
+        REMOTE_READ_SETTINGS = 0x20,
+        REMOTE_WRITE_SETTINGS = 0x21,
+        REMOTE_RESTART = 0x22,
+
         BL_GET_INFO = 0xE0,
         BL_ERASE_FLASH = 0xE1,
         BL_PROGRAM_FLASH = 0xE2,
@@ -86,6 +99,39 @@ public class UniSolderComm
         public byte DGain;
         public byte OVSGain;
     }
+    /// <summary>Answer of the application info command (0x80). Protocol 1 or more means remote control is available.</summary>
+    public class AppInfo
+    {
+        public int Minor;
+        public int Major;
+        public int Board;
+        public int Protocol;
+        public string BoardName { get { return Board == 1 ? "5.2C" : "5.2"; } }
+    }
+
+    /// <summary>State of the station: temperatures in degrees C (0 = OFF for presets, 0 = heater off for the target).</summary>
+    public class DeviceState
+    {
+        public int Set;
+        public int Target;
+        public int[] Presets = new int[4];
+        public int Holder;
+        public int Sleep;
+        public int Min;
+        public int Max;
+        public int Mode;
+        public int Flags;
+        public int ActIron;
+        public int TempStep = 1;
+        public bool ManualSleep { get { return (Flags & 1) != 0; } }
+        public bool Standby { get { return (Flags & 2) != 0; } }
+        public bool TwoIrons { get { return (Flags & 4) != 0; } }
+        public bool OnStand { get { return (Flags & 8) != 0; } }
+        public bool Fahrenheit { get { return (Flags & 16) != 0; } }
+        /// <summary>The station is in its menu or another screen where remote changes should wait.</summary>
+        public bool InMenu { get { return (Mode >= 3 && Mode <= 7) || (Mode >= 9 && Mode <= 12); } }
+    }
+
     #endregion
 
     private SSComm.IUniComm lTransport;
@@ -271,6 +317,143 @@ public class UniSolderComm
         };
         SSComm.Log.Info("Set PID parameters: " + FormatPID(PID));
         SendBINCommand(BB, 0, BB.Length, null, 0);
+    }
+
+    // ---- remote control and settings (firmware protocol 1) ----
+
+    public const int SETTINGS_SIZE = 64;
+    public const int SETTINGS_CHUNK = 48;
+
+    private static int U16(byte[] b, int i) { return b[i] | (b[i + 1] << 8); }
+
+    /// <summary>Sends a command and returns the bytes after the command byte, or null when the station did not answer.</summary>
+    private byte[] Request(byte[] cmd, int timeout)
+    {
+        byte[] r = new byte[64];
+        if (SendBINCommand(cmd, 0, cmd.Length, r, timeout) != 0) return null;
+        return r;
+    }
+
+    /// <summary>null when the firmware does not answer: it has no remote control.</summary>
+    public AppInfo GetAppInfo()
+    {
+        var r = Request(new byte[] { (byte)Commands.APP_GET_INFO }, 1000);
+        if (r == null) return null;
+        return new AppInfo { Minor = r[0], Major = r[1], Board = r[2], Protocol = r[3] };
+    }
+
+    public DeviceState GetState()
+    {
+        var r = Request(new byte[] { (byte)Commands.REMOTE_GET_STATE }, 1000);
+        if (r == null) return null;
+        var s = new DeviceState();
+        s.Set = U16(r, 0);
+        s.Target = U16(r, 2);
+        for (int i = 0; i < 4; i++) s.Presets[i] = U16(r, 4 + 2 * i);
+        s.Holder = U16(r, 12);
+        s.Sleep = U16(r, 14);
+        s.Min = U16(r, 16);
+        s.Max = U16(r, 18);
+        s.Mode = r[20];
+        s.Flags = r[21];
+        s.ActIron = r[22];
+        s.TempStep = Math.Max(1, (int)r[23]);
+        return s;
+    }
+
+    /// <summary>Sets the temperature in degrees C; the station limits it like the knob. Returns the temperature that was set, or -1.</summary>
+    public int SetTemperature(int degC)
+    {
+        var r = Request(new byte[] { (byte)Commands.REMOTE_SET_TEMP, (byte)(degC & 255), (byte)((degC >> 8) & 255) }, 1000);
+        if (r == null) return -1;
+        SSComm.Log.Info("Set temperature " + degC + " -> " + U16(r, 0));
+        return U16(r, 0);
+    }
+
+    /// <summary>Selects preset 0..3. Returns the temperature set, or -1.</summary>
+    public int SelectPreset(int index)
+    {
+        var r = Request(new byte[] { (byte)Commands.REMOTE_PRESET, (byte)index }, 1000);
+        return r == null ? -1 : U16(r, 0);
+    }
+
+    /// <summary>Returns 1 while the station sleeps, 0 when awake, -1 when it did not answer.</summary>
+    public int Sleep(bool on)
+    {
+        var r = Request(new byte[] { (byte)Commands.REMOTE_SLEEP, (byte)(on ? 1 : 0) }, 1000);
+        return r == null ? -1 : (r[0] != 0 ? 1 : 0);
+    }
+
+    /// <summary>Two-iron adapter: returns the active iron, or -1.</summary>
+    public int SwitchIron()
+    {
+        var r = Request(new byte[] { (byte)Commands.REMOTE_SWITCH_IRON }, 1000);
+        return r == null ? -1 : r[0];
+    }
+
+    /// <summary>Saves the PID values in use for the connected iron in the station. 0 = done, 1 no iron, 2 out of range, 3 memory full, -1 = no answer.</summary>
+    public int PidSave()
+    {
+        var r = Request(new byte[] { (byte)Commands.REMOTE_PID_SAVE }, 2000);
+        return r == null ? -1 : r[0];
+    }
+
+    /// <summary>Forgets the saved PID values of the connected iron. 0 = done, 1 no iron, 2 none saved, -1 = no answer.</summary>
+    public int PidClear()
+    {
+        var r = Request(new byte[] { (byte)Commands.REMOTE_PID_CLEAR }, 2000);
+        return r == null ? -1 : r[0];
+    }
+
+    /// <summary>1 when the station holds saved PID values for the connected iron, 0 when not, -1 = no answer.</summary>
+    public int PidSaved()
+    {
+        var r = Request(new byte[] { (byte)Commands.REMOTE_PID_SAVED }, 1000);
+        return r == null ? -1 : (r[0] != 0 ? 1 : 0);
+    }
+
+    /// <summary>The 64 settings bytes of the station (the pincode is left out by the firmware), or null.</summary>
+    public byte[] ReadSettings()
+    {
+        var outb = new byte[SETTINGS_SIZE];
+        int addr = 0;
+        while (addr < SETTINGS_SIZE)
+        {
+            int n = Math.Min(SETTINGS_CHUNK, SETTINGS_SIZE - addr);
+            var r = Request(new byte[] { (byte)Commands.REMOTE_READ_SETTINGS, (byte)addr, (byte)n }, 1000);
+            if (r == null || r[2] != 0 || r[1] != n) return null;
+            Array.Copy(r, 3, outb, addr, n);
+            addr += n;
+        }
+        return outb;
+    }
+
+    /// <summary>Writes the 64 settings bytes. The station must be restarted afterwards (RestartDevice) to use them.</summary>
+    public bool WriteSettings(byte[] data)
+    {
+        if (data == null || data.Length != SETTINGS_SIZE) return false;
+        int addr = 0;
+        while (addr < SETTINGS_SIZE)
+        {
+            int n = Math.Min(SETTINGS_CHUNK, SETTINGS_SIZE - addr);
+            var b = new byte[5 + n];
+            b[0] = (byte)Commands.REMOTE_WRITE_SETTINGS;
+            b[1] = 0x5A;
+            b[2] = 0xA5;
+            b[3] = (byte)addr;
+            b[4] = (byte)n;
+            Array.Copy(data, addr, b, 5, n);
+            var r = Request(b, 3000);
+            if (r == null || r[0] != 0) return false;
+            addr += n;
+        }
+        return true;
+    }
+
+    public void RestartDevice()
+    {
+        SSComm.Log.Info("Restart station");
+        SendBINCommand(new byte[] { (byte)Commands.REMOTE_RESTART, 0x5A, 0xA5 }, 0, 3, null, 0);
     }
 
     public Int32 BlGetInfo(ref byte blVerMaj, ref byte blVerMin)

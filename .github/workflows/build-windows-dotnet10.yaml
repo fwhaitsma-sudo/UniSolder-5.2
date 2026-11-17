@@ -4,6 +4,16 @@ name: Windows Unisolder application (.NET 10)
 
 on:
   workflow_dispatch:
+  # builds of other branches than display-step start by themselves and are published as a pre-release
+  push:
+    branches-ignore:
+      - display-step
+    paths:
+      - 'software/PC/**'
+      - '.github/workflows/build-windows-dotnet10.yaml'
+
+permissions:
+  contents: write   # to publish the release
 
 jobs:
   build:
@@ -32,3 +42,16 @@ jobs:
         name: Unisolder-WindowsApp-net10
         path: software/PC/publish
         if-no-files-found: error
+    # Pre-release with the exe, so it can be downloaded without a GitHub login (not for display-step: those are released by hand)
+    - name: Publish pre-release
+      if: github.event_name == 'push'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        tag="win-$(date -u +%Y%m%d-%H%M)-$(echo $GITHUB_SHA | cut -c1-7)"
+        cp "$(ls software/PC/publish/*.exe | head -n 1)" "UniSolder-windows-$tag.exe"
+        gh release create "$tag" "UniSolder-windows-$tag.exe" --prerelease \
+          --title "Windows app $tag" \
+          --notes "Windows app built from commit $GITHUB_SHA on ${GITHUB_REF_NAME}. Single exe, runs on Windows x64 without installing .NET." \
+          --target "$GITHUB_SHA"

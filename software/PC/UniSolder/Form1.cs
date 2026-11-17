@@ -33,8 +33,67 @@ namespace UniSolder
             lUniSolder.LiveDataReceived += LiveDataReceived;
             lUniSolder.Transport = new SSComm.USBHID { DevVID = 0x4d8, DevPID = 0x3c };
 
+            BuildTabs();
+
             ConnectionTimer = new System.Windows.Forms.Timer() { Interval = 1000, Enabled = true };
             ConnectionTimer.Tick += ConnectionTimer_Tick;
+        }
+
+        private TabControl tabs;
+        private ControlTab controlTab;
+
+        /// <summary>
+        /// Same pages as the Android app. The controls made by the designer are moved to their page here:
+        /// Live = chart and trace tick boxes (+ stop/start), PID = sliders, Firmware = query device and update.
+        /// </summary>
+        private void BuildTabs()
+        {
+            SuspendLayout();
+            tabs = new TabControl();
+            tabs.Dock = DockStyle.Fill;
+            tabs.Font = new Font(Font.FontFamily, 11f);
+            tabs.Padding = new Point(20, 6);
+            tabs.SizeMode = TabSizeMode.Fixed;
+            tabs.ItemSize = new Size(120, 36);
+
+            var live = new TabPage("Live");
+            var control = new TabPage("Control");
+            var pid = new TabPage("PID");
+            var firmware = new TabPage("Firmware");
+            Font pageFont = new Font(Font.FontFamily, 9f);
+            foreach (var tp in new[] { live, control, pid, firmware }) { tp.Font = pageFont; tp.UseVisualStyleBackColor = true; }
+
+            //pull the sliders and the buttons out of the chart layout
+            buttonsPanel.Controls.Remove(Button8);
+            bottomPanel.Controls.Remove(buttonsPanel);
+            mainLayout.Controls.Remove(bottomPanel);
+            Controls.Remove(mainLayout);
+
+            Button8.Margin = new Padding(6, 12, 6, 0);
+            panel1.Controls.Add(Button8);
+            live.Controls.Add(mainLayout);
+
+            bottomPanel.Dock = DockStyle.Top;
+            bottomPanel.Height = 180;
+            bottomPanel.Padding = new Padding(16);
+            bottomPanel.Margin = new Padding(0);
+            pid.Controls.Add(bottomPanel);
+
+            buttonsPanel.Dock = DockStyle.Top;
+            buttonsPanel.Padding = new Padding(16);
+            buttonsPanel.Margin = new Padding(0);
+            firmware.Controls.Add(buttonsPanel);
+
+            controlTab = new ControlTab(lUniSolder);
+            control.Controls.Add(controlTab);
+
+            tabs.TabPages.Add(live);
+            tabs.TabPages.Add(control);
+            tabs.TabPages.Add(pid);
+            tabs.TabPages.Add(firmware);
+            Controls.Add(tabs);
+            Controls.SetChildIndex(tabs, 0);
+            ResumeLayout(true);
         }
 
         private void ConnectionTimer_Tick(object sender, EventArgs e)
