@@ -33,6 +33,7 @@ private const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
 private const val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT
 private const val REQ_HEX = 1
 private const val REQ_BT = 2
+private const val BT_INSTRUCTIONS_URL = "https://github.com/fwhaitsma-sudo/UniSolder-5.2/blob/display-step/software/esp32/README.md"
 
 class MainActivity : Activity(), DeviceLink.Listener {
     private lateinit var link: DeviceLink
@@ -166,8 +167,9 @@ class MainActivity : Activity(), DeviceLink.Listener {
         connectButton.text = "Connect"
         connectButton.setOnClickListener { link.retry() }
         statusRow.addView(connectButton)
-        val btButton = Button(this)
+        btButton = Button(this)
         btButton.text = "Bluetooth"
+        btButton.visibility = if (link.btEnabled) View.VISIBLE else View.GONE
         btButton.setOnClickListener { chooseBluetooth() }
         statusRow.addView(btButton)
         root.addView(statusRow)
@@ -182,11 +184,12 @@ class MainActivity : Activity(), DeviceLink.Listener {
         pages.add(buildPidPage())
         pages.add(toolsPage.view)
         pages.add(buildFirmwarePage())
+        pages.add(buildMorePage())
         for (p in pages) content.addView(p, FrameLayout.LayoutParams(MATCH, MATCH))
 
         val tabBar = LinearLayout(this)
         tabBar.orientation = LinearLayout.HORIZONTAL
-        val names = listOf("Live", "Control", "PID", "Tools", "Firmware")
+        val names = listOf("Live", "Control", "PID", "Tools", "Firmware", "More")
         for (i in names.indices) {
             val b = Button(this)
             b.text = names[i]
@@ -195,6 +198,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
             b.textSize = 13f
             b.isAllCaps = false
             b.setPadding(dp(2), 0, dp(2), 0)
+            b.tag = "tab"       // spaceButtons() keeps the narrow padding so six tabs fit
             b.setOnClickListener { showPage(i) }
             tabs.add(b)
             b.ellipsize = null
@@ -354,6 +358,87 @@ class MainActivity : Activity(), DeviceLink.Listener {
         return scroll
     }
 
+    private lateinit var btButton: Button
+    private lateinit var moreStatus: TextView
+    private lateinit var moreToggle: Button
+
+    /** Last tab: optional extras. Bluetooth needs hardware most users do not have, so it is unlocked here. */
+    private fun buildMorePage(): View {
+        val scroll = ScrollView(this)
+        val col = LinearLayout(this)
+        col.orientation = LinearLayout.VERTICAL
+        col.setPadding(dp(16), dp(12), dp(16), dp(12))
+
+        val title = TextView(this)
+        title.text = "Bluetooth (optional)"
+        title.textSize = 20f
+        col.addView(title)
+
+        val info = TextView(this)
+        info.text = "The app can connect to the station over Bluetooth instead of the USB cable. " +
+                "This needs extra hardware: an ESP32 module built into the station, wired to the front board and " +
+                "flashed with the UniSolder bridge file. Without that hardware Bluetooth does nothing, so only unlock it " +
+                "if you have installed it.\n\nThe instructions on GitHub explain the parts, the wiring, flashing and pairing."
+        info.setPadding(0, dp(8), 0, dp(8))
+        col.addView(info)
+
+        val docs = Button(this)
+        docs.text = "Open the instructions on GitHub"
+        docs.setOnClickListener {
+            try {
+                startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(BT_INSTRUCTIONS_URL)))
+            } catch (e: Exception) {
+                showMessage("Instructions", "No browser found. The instructions are at:\n" + BT_INSTRUCTIONS_URL)
+            }
+        }
+        col.addView(docs)
+
+        moreToggle = Button(this)
+        moreToggle.setOnClickListener { toggleBluetooth() }
+        col.addView(moreToggle)
+
+        moreStatus = TextView(this)
+        moreStatus.setPadding(0, dp(8), 0, 0)
+        col.addView(moreStatus)
+
+        scroll.addView(col, ViewGroup.LayoutParams(MATCH, WRAP))
+        updateMore()
+        return scroll
+    }
+
+    private fun updateMore() {
+        val on = link.btEnabled
+        moreToggle.text = if (on) "Turn Bluetooth off" else "I have the hardware: unlock Bluetooth"
+        moreStatus.text = if (on) "Bluetooth is unlocked. Use the Bluetooth button at the top to choose the bridge."
+        else "Bluetooth is locked: the Bluetooth button is hidden and the app never tries it."
+        btButton.visibility = if (on) View.VISIBLE else View.GONE
+    }
+
+    private fun toggleBluetooth() {
+        if (link.btEnabled) {
+            AlertDialog.Builder(this).setTitle("Turn Bluetooth off")
+                .setMessage("The app forgets the chosen bridge and disconnects. You can unlock Bluetooth again here.")
+                .setPositiveButton("Turn off") { _, _ ->
+                    io.execute {
+                        link.stopBluetooth()
+                        link.btEnabled = false
+                        link.retry()
+                        runOnUiThread { updateMore() }
+                    }
+                }
+                .setNegativeButton("Cancel", null).show()
+        } else {
+            AlertDialog.Builder(this).setTitle("Unlock Bluetooth")
+                .setMessage("This only works with the extra hardware: an ESP32 module installed in the station and flashed with the UniSolder bridge file. Do you have it?")
+                .setPositiveButton("Yes, unlock") { _, _ ->
+                    link.btEnabled = true
+                    updateMore()
+                    showMessage("Bluetooth", "Unlocked. Pair the \"UniSolder\" device in the Android Bluetooth settings, then press Bluetooth at the top to choose it.")
+                }
+                .setNegativeButton("Cancel", null).show()
+        }
+    }
+
     private fun buildFirmwarePage(): View {
         val col = LinearLayout(this)
         col.orientation = LinearLayout.VERTICAL
@@ -417,7 +502,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
             }
             v.minWidth = 0
             v.minimumWidth = 0
-            v.setPadding(dp(8), dp(4), dp(8), dp(4))
+            if (v.tag == "tab") v.setPadding(dp(6), dp(4), dp(6), dp(4)) else v.setPadding(dp(8), dp(4), dp(8), dp(4))
             if (v.tag != "multiline" && v.text.length <= 12) v.maxLines = 1
         }
         if (v is ViewGroup) for (i in 0 until v.childCount) spaceButtons(v.getChildAt(i))
