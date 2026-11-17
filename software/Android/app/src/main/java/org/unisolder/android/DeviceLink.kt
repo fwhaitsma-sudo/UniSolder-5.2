@@ -286,7 +286,7 @@ class DeviceLink(private val ctx: Context) {
                     feedback.clear()
                     startRx()
                     AppLog.info("Connected over Bluetooth")
-                    state(true, "Connected (Bluetooth)")
+                    state(true, "Connected")
                 }
             }
         }.start()

@@ -168,9 +168,11 @@ class MainActivity : Activity(), DeviceLink.Listener {
         connectButton.setOnClickListener { link.retry() }
         statusRow.addView(connectButton)
         btButton = Button(this)
-        btButton.text = "Bluetooth"
-        btButton.visibility = if (link.btEnabled) View.VISIBLE else View.GONE
-        btButton.setOnClickListener { chooseBluetooth() }
+        btButton.setOnClickListener {
+            // with the cable connected the button only shows the connection type
+            if (!(link.connected && !link.viaBluetooth)) chooseBluetooth()
+        }
+        updateBtButton()
         statusRow.addView(btButton)
         root.addView(statusRow)
 
@@ -411,7 +413,17 @@ class MainActivity : Activity(), DeviceLink.Listener {
         moreToggle.text = if (on) "Turn Bluetooth off" else "I have the hardware: unlock Bluetooth"
         moreStatus.text = if (on) "Bluetooth is unlocked. Use the Bluetooth button at the top to choose the bridge."
         else "Bluetooth is locked: the Bluetooth button is hidden and the app never tries it."
-        btButton.visibility = if (on) View.VISIBLE else View.GONE
+        updateBtButton()
+    }
+
+    /** Hidden while Bluetooth is locked. Otherwise it names the connection in use: "USB" (does nothing) or "Bluetooth" (opens the bridge settings). */
+    private fun updateBtButton() {
+        if (!link.btEnabled) {
+            btButton.visibility = View.GONE
+            return
+        }
+        btButton.visibility = View.VISIBLE
+        btButton.text = if (link.connected && !link.viaBluetooth) "USB" else "Bluetooth"
     }
 
     private fun toggleBluetooth() {
@@ -592,6 +604,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
     override fun onConnection(connected: Boolean, text: String) {
         statusText.text = text
         connectButton.visibility = if (connected) View.GONE else View.VISIBLE
+        updateBtButton()
         if (connected) {
             chart.clear()
             refAdc = Float.NaN
