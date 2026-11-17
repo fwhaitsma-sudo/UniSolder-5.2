@@ -173,6 +173,19 @@ class DeviceLink(private val ctx: Context) {
         if (busy) return
         synchronized(connLock) {
             if (viaBt) {
+                // a USB cable always wins: leave Bluetooth, the next poll connects over USB
+                val usbDev = findDevice()
+                if (usbDev != null) {
+                    if (usb.hasPermission(usbDev)) {
+                        AppLog.info("USB cable plugged in: leaving Bluetooth")
+                        disconnect()
+                        return
+                    }
+                    if (permissionAsked != usbDev.deviceName) {
+                        permissionAsked = usbDev.deviceName
+                        requestPermission(usbDev)     // stay on Bluetooth until USB is allowed
+                    }
+                }
                 if (!bt.connected) disconnect() else bt.write(ByteArray(64))   // all zero = no-op command that keeps the link active
                 return
             }
@@ -224,6 +237,18 @@ class DeviceLink(private val ctx: Context) {
         btPin = newPin
         disconnect()
         return true
+    }
+
+    /** "Do not use Bluetooth": forgets the bridge and drops an open Bluetooth link. Call from a background thread. */
+    fun stopBluetooth() {
+        btAddress = ""
+        btPinRejected = false
+        synchronized(connLock) {
+            if (viaBt) {
+                AppLog.info("Bluetooth switched off by the user")
+                disconnect()
+            }
+        }
     }
 
     private fun tryBluetooth() {

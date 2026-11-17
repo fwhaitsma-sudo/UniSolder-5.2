@@ -451,8 +451,10 @@ class MainActivity : Activity(), DeviceLink.Listener {
                 } else if (which == devs.size + 1) {
                     askNewPin()
                 } else {
-                    link.btAddress = ""
-                    link.retry()
+                    io.execute {
+                        link.stopBluetooth()
+                        link.retry()
+                    }
                 }
             }
             .setNegativeButton("Cancel", null)
