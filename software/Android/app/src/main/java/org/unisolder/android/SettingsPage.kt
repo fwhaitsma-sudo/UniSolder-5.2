@@ -150,6 +150,10 @@ class SettingsPage(private val act: Activity, private val link: DeviceLink, priv
         level1.orientation = LinearLayout.VERTICAL
         col.addView(level1)
 
+        advanced = LinearLayout(act)
+        advanced.orientation = LinearLayout.VERTICAL
+        advanced.visibility = View.GONE
+
         advButton = Button(act)
         advButton.text = "Advanced ▸"
         advButton.setOnClickListener {
@@ -159,9 +163,7 @@ class SettingsPage(private val act: Activity, private val link: DeviceLink, priv
         }
         col.addView(advButton, LinearLayout.LayoutParams(MATCH_P, WRAP_P).also { it.topMargin = dp(16) })
 
-        advanced = LinearLayout(act)
-        advanced.orientation = LinearLayout.VERTICAL
-        advanced.visibility = View.GONE
+
         col.addView(advanced)
 
         val foot = TextView(act)
