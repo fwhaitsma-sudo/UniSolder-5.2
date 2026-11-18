@@ -177,8 +177,7 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
         backupTitle.setPadding(0, dp(24), 0, dp(4))
         col.addView(backupTitle)
         val backupNote = TextView(act)
-        backupNote.text = "Saves all menu settings, the name, the odd degrees of the presets and the PID values saved in the station to a file on the phone. " +
-                "Restoring writes them back and restarts the station. The menu pincode is not included."
+        backupNote.text = "Backs up all station settings and saved PID values to a file; restoring restarts the station."
         col.addView(backupNote)
         saveButton = Button(act)
         saveButton.text = "Save settings to file"
