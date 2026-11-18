@@ -32,11 +32,12 @@ class SettingsPage(private val act: Activity, private val link: DeviceLink, priv
     private var loaded = false
     private val rows = ArrayList<Row>()
 
-    /** Buttons lighter than the page so they stand out (the theme's own button colour is too close to the background). */
+    private val dark: Boolean
+        get() = (act.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
+
+    /** Fixed colours: a very dark page with clearly lighter buttons (light theme: the reverse). */
     private fun style(b: Button) {
-        val bg = android.util.TypedValue()
-        val dark = act.theme.resolveAttribute(android.R.attr.colorBackground, bg, true) && android.graphics.Color.luminance(bg.data) < 0.5f
-        b.backgroundTintList = android.content.res.ColorStateList.valueOf(if (dark) 0xFF54545C.toInt() else 0xFFB8B8C2.toInt())
+        b.backgroundTintList = android.content.res.ColorStateList.valueOf(if (dark) 0xFF3E3E46.toInt() else 0xFFD2D2DA.toInt())
     }
 
     private fun dp(v: Int): Int = (v * act.resources.displayMetrics.density).toInt()
@@ -159,8 +160,7 @@ class SettingsPage(private val act: Activity, private val link: DeviceLink, priv
         for (s in level1Specs) addRow(level1, s)
 
         scroll.addView(col, ViewGroup.LayoutParams(MATCH_P, WRAP_P))
-        val tv = android.util.TypedValue()
-        if (act.theme.resolveAttribute(android.R.attr.colorBackground, tv, true)) scroll.setBackgroundColor(tv.data)
+        scroll.setBackgroundColor(if (dark) 0xFF101012.toInt() else 0xFFF6F6F8.toInt())
         view = scroll
         enableAll(false)
     }
