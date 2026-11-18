@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Same yellow as the launcher icon (#FFC107) instead of the system accent colour -->
+    <style name="AppTheme" parent="android:Theme.DeviceDefault.NoActionBar">
+        <item name="android:colorAccent">#FFC107</item>
+        <item name="android:colorControlActivated">#FFC107</item>
+        <item name="android:colorControlHighlight">#33FFC107</item>
+        <item name="android:textColorHighlight">#66FFC107</item>
+    </style>
+</resources>

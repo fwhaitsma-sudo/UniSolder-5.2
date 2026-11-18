@@ -88,8 +88,12 @@ class SettingsPage(private val act: Activity, private val link: DeviceLink, priv
             valueText.text = text(v)
             val b = bar
             if (b != null) b.progress = toProgress(v)
-            for ((i, b) in segButtons.withIndex()) b.backgroundTintList = android.content.res.ColorStateList.valueOf(
-                if (spec.lo + i == v) (if (dark) 0xFF3B6FD4.toInt() else 0xFF1A5FC8.toInt()) else (if (dark) 0xFF3E3E46.toInt() else 0xFFD2D2DA.toInt()))
+            for ((i, b) in segButtons.withIndex()) {
+                val on = spec.lo + i == v
+                b.backgroundTintList = android.content.res.ColorStateList.valueOf(
+                    if (on) 0xFFFFC107.toInt() else (if (dark) 0xFF3E3E46.toInt() else 0xFFD2D2DA.toInt()))
+                b.setTextColor(if (on) 0xFF000000.toInt() else (if (dark) 0xFFFFFFFF.toInt() else 0xFF000000.toInt()))
+            }
         }
 
         fun setEnabled(on: Boolean) {
@@ -191,7 +195,7 @@ class SettingsPage(private val act: Activity, private val link: DeviceLink, priv
         nh.text = "Name"
         nh.textSize = 14f
         nh.setTypeface(null, android.graphics.Typeface.BOLD)
-        nh.setTextColor(if (dark) 0xFF8AB4F8.toInt() else 0xFF1A5FC8.toInt())
+        nh.setTextColor(if (dark) 0xFFFFC107.toInt() else 0xFF9A7000.toInt())
         nameCard.addView(nh)
         val nn = TextView(act)
         nn.text = "Shown on the station at power-up. Up to 10 characters: letters, digits, space, - and ."
@@ -242,7 +246,7 @@ class SettingsPage(private val act: Activity, private val link: DeviceLink, priv
             h.text = title
             h.textSize = 14f
             h.setTypeface(null, android.graphics.Typeface.BOLD)
-            h.setTextColor(if (dark) 0xFF8AB4F8.toInt() else 0xFF1A5FC8.toInt())
+            h.setTextColor(if (dark) 0xFFFFC107.toInt() else 0xFF9A7000.toInt())
             card.addView(h)
             for (id in ids) addRow(card, level1Specs.first { it.id == id })
             val lp = LinearLayout.LayoutParams(MATCH_P, WRAP_P)
