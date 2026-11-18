@@ -49,6 +49,7 @@ Update this file and commit after each finished item, so a new session can conti
   - [x] 18.4 power-up name: cmds 0x42 get / 0x43 set (10 chars, menu character set), protocol byte now 4 (TIP PRESET 16c will need 5); Name card in the settings page (hidden on older firmware)
   - [ ] 18.3 CI builds OK (firmware + app pre-releases on remote-control); waiting for user hardware test; manual + changelog only after the test
 - [ ] 19. (user request 2026-11-18) Backup of the PID values saved in the station: cmds 0x44 read slot / 0x45 write slot (12 bytes, key), protocol 5 (TIP PRESET 16c now needs 6); backup file gets a pid= line; restore writes the slots before the restart. Built on remote-control, waiting for user test; then manual (Control tab backup text, Not-in-app list) + changelog.
+- [ ] 20. (user request 2026-11-18) Soldering profiles in the app (JBC calls them Dynamic Soldering Profiles; Ersa i-CON TRACE: no ramp feature found): ProfilesPage.kt, steps = target temp + ramp s + hold s, run by the app through the set-temperature command, stops on disconnect, station menu or Stop; hold waits for the measured temperature (+-5 C) unless switched off. Built, waiting for user test; then manual + changelog.
 - [ ] 14. Changelog entries, user test, merge when the user says so
 
 ## Facts found (do not re-research)
