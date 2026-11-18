@@ -46,6 +46,7 @@ Update this file and commit after each finished item, so a new session can conti
 - [ ] 18. (user request 2026-11-17) Station settings in the Android app, same options as the device menu: level 1 = T1-T4, HOLDER T, SLEEP T, SLEEP time, STAND-BY time, WAKE UP, DEGREES, BRIGHTNESS, SOUND, TEMP.STEP, DISP.STEP; No Advanced level (user, 2026-11-18): HOLDER sensor, SENSOR FLT, SND PITCH moved to the list; ROTATION, BUTTONS, MENU DOWN left out of the app. Device-only (not in the app): INPUT, CALIBRATE, INST.INFO, VERSION, PINCODE; TIP PRESET excluded (paused); NAME maybe later.
   - [x] 18.1 firmware: 0x40 read all (29 x u16, menu units), 0x41 set [id, lo, hi] -> [id, status, lo, hi] (0 ok, 1 not settable, 2 range, 3 station in menu); menu.c RemoteGetParam/RemoteSetParam; protocol byte now 3 (TIP PRESET 16c will need 4). Built OK on CI (fw-rc pre-release).
   - [x] 18.2 app: DeviceLink getParams/setParam, SettingsPage (opened from Control tab), advanced section
+  - [x] 18.4 power-up name: cmds 0x42 get / 0x43 set (10 chars, menu character set), protocol byte now 4 (TIP PRESET 16c will need 5); Name card in the settings page (hidden on older firmware)
   - [ ] 18.3 CI builds OK (firmware + app pre-releases on remote-control); waiting for user hardware test; manual + changelog only after the test
 - [ ] 14. Changelog entries, user test, merge when the user says so
 
