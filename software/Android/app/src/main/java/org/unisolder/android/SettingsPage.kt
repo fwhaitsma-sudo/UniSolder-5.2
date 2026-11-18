@@ -215,7 +215,6 @@ class SettingsPage(private val act: Activity, private val link: DeviceLink, priv
         nameSave.setOnClickListener { saveName() }
         nrow.addView(nameSave)
         nameCard.addView(nrow)
-        col.addView(nameCard, col.indexOfChild(statusText) + 1 + 4, LinearLayout.LayoutParams(MATCH_P, WRAP_P).also { it.topMargin = dp(12) })
         nameCard.visibility = View.GONE
 
         val foot = TextView(act)
@@ -250,6 +249,7 @@ class SettingsPage(private val act: Activity, private val link: DeviceLink, priv
             lp.topMargin = dp(12)
             col.addView(card, at++, lp)
         }
+        col.addView(nameCard, at, LinearLayout.LayoutParams(MATCH_P, WRAP_P).also { it.topMargin = dp(12) })
 
         scroll.addView(col, ViewGroup.LayoutParams(MATCH_P, WRAP_P))
         scroll.setBackgroundColor(if (dark) 0xFF101012.toInt() else 0xFFF6F6F8.toInt())
