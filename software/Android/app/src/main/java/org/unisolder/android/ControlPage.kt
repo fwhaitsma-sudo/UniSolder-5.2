@@ -29,6 +29,8 @@ import java.util.concurrent.ExecutorService
 class ControlPage(private val act: Activity, private val link: DeviceLink, private val io: ExecutorService) {
     val view: View
     private val settings = SettingsPage(act, link, io)
+    private val profiles = ProfilesPage(act, link, io)
+    private val profilesButton: Button
     private val settingsButton: Button
     private val ui = Handler(Looper.getMainLooper())
 
@@ -164,6 +166,11 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
         settingsButton.setOnClickListener { openSettings(true) }
         col.addView(settingsButton, LinearLayout.LayoutParams(MATCH_P, WRAP_P).also { it.topMargin = dp(16) })
 
+        profilesButton = Button(act)
+        profilesButton.text = "Soldering profiles"
+        profilesButton.setOnClickListener { profiles.view.visibility = View.VISIBLE; profiles.showListNow() }
+        col.addView(profilesButton, LinearLayout.LayoutParams(MATCH_P, WRAP_P).also { it.topMargin = dp(8) })
+
         val backupTitle = TextView(act)
         backupTitle.text = "Settings backup"
         backupTitle.textSize = 18f
@@ -186,8 +193,12 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
         val frame = android.widget.FrameLayout(act)
         frame.addView(scroll, ViewGroup.LayoutParams(MATCH_P, MATCH_P))
         frame.addView(settings.view, ViewGroup.LayoutParams(MATCH_P, MATCH_P))
+        frame.addView(profiles.view, ViewGroup.LayoutParams(MATCH_P, MATCH_P))
         settings.view.visibility = View.GONE
+        profiles.view.visibility = View.GONE
         settings.onBack = { openSettings(false) }
+        profiles.onBack = { profiles.view.visibility = View.GONE }
+        profiles.onRunChanged = { n -> profilesButton.text = if (n == null) "Soldering profiles" else "Soldering profiles (running: " + n + ")" }
         view = frame
         enableControls(false)
         showInfo()
@@ -218,6 +229,10 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
 
     /** Closes the settings page when it is open; returns true if it was. */
     fun closeSettings(): Boolean {
+        if (profiles.view.visibility == View.VISIBLE) {
+            profiles.view.visibility = View.GONE
+            return true
+        }
         if (settings.view.visibility != View.VISIBLE) return false
         openSettings(false)
         return true
@@ -229,7 +244,14 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
         if (open) settings.reload()
     }
 
+    /** measured tip temperature, for the profiles that wait for it */
+    fun onTemp(t: Float) {
+        profiles.onTemp(t)
+    }
+
     fun onDisconnected() {
+        profiles.onDisconnected()
+        profiles.view.visibility = View.GONE
         settings.onDisconnected()
         openSettings(false)
         info = null
@@ -274,6 +296,7 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
         sleepButton.isEnabled = on && s != null && !s.inMenu
         saveButton.isEnabled = on
         settingsButton.isEnabled = on && (info?.protocol ?: 0) >= 3
+        profilesButton.isEnabled = on && (info?.protocol ?: 0) >= 1
         restoreButton.isEnabled = on
     }
 

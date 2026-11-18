@@ -630,6 +630,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
         // duty 512 = heater on all the time
         val power = (s.duty * 100f / 512f).coerceIn(0f, 100f)
         toolsPage.onSample(s, power)
+        controlPage.onTemp(s.temp)
         pidTools.onSample(s)
         if (dashboard.visibility == View.VISIBLE) dashboard.update(s, power)
         if (paused) return
