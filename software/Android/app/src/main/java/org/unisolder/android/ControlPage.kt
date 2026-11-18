@@ -216,6 +216,13 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
         }
     }
 
+    /** Closes the settings page when it is open; returns true if it was. */
+    fun closeSettings(): Boolean {
+        if (settings.view.visibility != View.VISIBLE) return false
+        openSettings(false)
+        return true
+    }
+
     private fun openSettings(open: Boolean) {
         settings.view.visibility = if (open) View.VISIBLE else View.GONE
         (view as android.widget.FrameLayout).getChildAt(0).visibility = if (open) View.GONE else View.VISIBLE

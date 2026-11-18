@@ -140,6 +140,8 @@ class MainActivity : Activity(), DeviceLink.Listener {
     override fun onBackPressed() {
         if (dashboard.visibility == View.VISIBLE) {
             closeDashboard()
+        } else if (controlPage.closeSettings()) {
+            // the settings page was open: closed it
         } else if (updating) {
             Toast.makeText(this, "Firmware update in progress", Toast.LENGTH_SHORT).show()
         } else {
