@@ -30,6 +30,9 @@ class SettingsPage(private val act: Activity, private val link: DeviceLink, priv
     private var values = IntArray(29)
     private var loaded = false
     private val rows = ArrayList<Row>()
+    private val nameCard = LinearLayout(act)
+    private val nameEdit = android.widget.EditText(act)
+    private val nameSave = Button(act)
 
     private val dark: Boolean
         get() = (act.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
@@ -177,6 +180,43 @@ class SettingsPage(private val act: Activity, private val link: DeviceLink, priv
         statusText = TextView(act)
         statusText.setPadding(0, dp(8), 0, dp(8))
         col.addView(statusText)
+
+        nameCard.orientation = LinearLayout.VERTICAL
+        nameCard.setPadding(dp(14), dp(10), dp(14), dp(10))
+        val nbg = android.graphics.drawable.GradientDrawable()
+        nbg.cornerRadius = dp(16).toFloat()
+        nbg.setColor(if (dark) 0xFF1D1D21.toInt() else 0xFFFFFFFF.toInt())
+        nameCard.background = nbg
+        val nh = TextView(act)
+        nh.text = "Name"
+        nh.textSize = 14f
+        nh.setTypeface(null, android.graphics.Typeface.BOLD)
+        nh.setTextColor(if (dark) 0xFF8AB4F8.toInt() else 0xFF1A5FC8.toInt())
+        nameCard.addView(nh)
+        val nn = TextView(act)
+        nn.text = "Shown on the station at power-up. Up to 10 characters: letters, digits, space, - and ."
+        nn.textSize = 12f
+        nn.setPadding(0, dp(4), 0, 0)
+        nameCard.addView(nn)
+        val nrow = LinearLayout(act)
+        nrow.orientation = LinearLayout.HORIZONTAL
+        nrow.gravity = Gravity.CENTER_VERTICAL
+        nameEdit.filters = arrayOf(
+            android.text.InputFilter.LengthFilter(10),
+            android.text.InputFilter { src, st, en, _, _, _ ->
+                val sb = StringBuilder()
+                for (i in st until en) if (src[i] in 'A'..'Z' || src[i] in 'a'..'z' || src[i] in '0'..'9' || src[i] == ' ' || src[i] == '-' || src[i] == '.') sb.append(src[i])
+                sb.toString()
+            })
+        nameEdit.setSingleLine(true)
+        nrow.addView(nameEdit, LinearLayout.LayoutParams(0, WRAP_P, 1f))
+        nameSave.text = "Save"
+        style(nameSave)
+        nameSave.setOnClickListener { saveName() }
+        nrow.addView(nameSave)
+        nameCard.addView(nrow)
+        col.addView(nameCard, col.indexOfChild(statusText) + 1 + 4, LinearLayout.LayoutParams(MATCH_P, WRAP_P).also { it.topMargin = dp(12) })
+        nameCard.visibility = View.GONE
 
         val foot = TextView(act)
         foot.text = "Swipe right or press Back to close. INPUT, calibration, instrument info and the pincode can only be changed on the station itself."
@@ -339,6 +379,23 @@ class SettingsPage(private val act: Activity, private val link: DeviceLink, priv
         }
     }
 
+    private fun saveName() {
+        val n = nameEdit.text.toString().trimEnd()
+        nameSave.isEnabled = false
+        io.execute {
+            val st = link.setName(n)
+            ui.post {
+                nameSave.isEnabled = true
+                Toast.makeText(act, when (st) {
+                    0 -> "Name saved."
+                    3 -> "The station is in its menu. Leave the menu first."
+                    null -> "No answer from the station."
+                    else -> "The station did not accept that name."
+                }, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
     private fun refreshAll() {
         for (r in rows) r.show(values[r.spec.id])
     }
@@ -362,7 +419,10 @@ class SettingsPage(private val act: Activity, private val link: DeviceLink, priv
         status("Reading the settings ...")
         io.execute {
             val v = link.getParams()
+            val name = if (v != null) link.getName() else null
             ui.post {
+                nameCard.visibility = if (name != null) View.VISIBLE else View.GONE
+                if (name != null) nameEdit.setText(name)
                 if (v == null) {
                     status("No answer from the station. This needs station firmware with protocol 3 or later.")
                     enableAll(false)
