@@ -58,6 +58,62 @@ class Profile(
     }
 }
 
+/** The planned curve of a profile: ramps as sloped lines, holds as flat lines (the wait for temperature is not drawn). */
+class ProfilePreview(ctx: android.content.Context) : View(ctx) {
+    private var steps: List<ProfileStep> = emptyList()
+    private val line = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFFFFC107.toInt(); strokeWidth = 4f * ctx.resources.displayMetrics.density; style = android.graphics.Paint.Style.STROKE
+    }
+    private val text = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0xFF9E9E9E.toInt(); textSize = 11f * ctx.resources.displayMetrics.scaledDensity
+    }
+    private val grid = android.graphics.Paint().apply { color = 0x33888888; strokeWidth = 1f }
+
+    fun set(s: List<ProfileStep>) {
+        steps = s
+        invalidate()
+    }
+
+    override fun onMeasure(w: Int, h: Int) {
+        setMeasuredDimension(MeasureSpec.getSize(w), (150 * resources.displayMetrics.density).toInt())
+    }
+
+    override fun onDraw(c: android.graphics.Canvas) {
+        val left = text.measureText("450") + 8f
+        val right = width - 6f
+        val top = 8f
+        val bottom = height - text.textSize - 10f
+        val total = steps.sumOf { it.ramp + it.hold }
+        c.drawLine(left, bottom, right, bottom, grid)
+        c.drawLine(left, top, right, top, grid)
+        val tMin = 100f
+        val tMax = maxOf(150f, (steps.maxOfOrNull { it.temp } ?: 150).toFloat())
+        c.drawText(tMax.toInt().toString(), 2f, top + text.textSize * 0.8f, text)
+        c.drawText("100", 2f, bottom, text)
+        if (steps.isEmpty() || total <= 0) {
+            c.drawText("Add a step to see the profile", left + 8f, (top + bottom) / 2, text)
+            return
+        }
+        fun x(sec: Float) = left + (right - left) * sec / total
+        fun y(t: Float) = bottom - (bottom - top) * (t - tMin) / (tMax - tMin)
+        val path = android.graphics.Path()
+        var sec = 0f
+        var prev = tMin    // step 1 ramps from the temperature that is set when the profile starts: drawn from the bottom
+        path.moveTo(x(0f), y(prev))
+        for (s in steps) {
+            sec += s.ramp
+            path.lineTo(x(sec), y(s.temp.toFloat()))
+            sec += s.hold
+            path.lineTo(x(sec), y(s.temp.toFloat()))
+            prev = s.temp.toFloat()
+        }
+        c.drawPath(path, line)
+        c.drawText("0", left, height - 4f, text)
+        val label = if (total >= 120) (total / 60).toString() + " min" else "$total s"
+        c.drawText(label, right - text.measureText(label), height - 4f, text)
+    }
+}
+
 /**
  * Soldering profiles: a list of steps (target temperature, ramp time, hold time) that the app runs by setting the
  * station's temperature along the profile. The profile runs in the app: it stops when the connection is lost
@@ -202,6 +258,13 @@ class ProfilesPage(private val act: Activity, private val link: DeviceLink, priv
         note.setPadding(0, dp(8), 0, 0)
         col.addView(note)
 
+        if (!link.connected && run == null) {
+            val off = TextView(act)
+            off.text = "Not connected: you can design and edit profiles now; starting one needs a connection."
+            off.textSize = 12f
+            off.setPadding(0, dp(6), 0, 0)
+            col.addView(off)
+        }
         if (run != null) addRunCard()
 
         for ((i, p) in profiles.withIndex()) {
@@ -279,6 +342,20 @@ class ProfilesPage(private val act: Activity, private val link: DeviceLink, priv
         h.setTextColor(if (dark) yellow else 0xFF9A7000.toInt())
         sc.addView(h)
         val rows = ArrayList<StepRow>()
+        val preview = ProfilePreview(act)
+        fun updatePreview() {
+            val st = ArrayList<ProfileStep>()
+            for (r in rows) {
+                val t = r.temp.text.toString().toIntOrNull() ?: continue
+                st.add(ProfileStep(t.coerceIn(100, 450), (r.ramp.text.toString().toIntOrNull() ?: 0).coerceIn(0, 3600), (r.hold.text.toString().toIntOrNull() ?: 0).coerceIn(0, 3600)))
+            }
+            preview.set(st)
+        }
+        val watcher = object : android.text.TextWatcher {
+            override fun afterTextChanged(s: android.text.Editable?) = updatePreview()
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+        }
         val list = LinearLayout(act)
         list.orientation = LinearLayout.VERTICAL
         sc.addView(list)
@@ -288,20 +365,30 @@ class ProfilesPage(private val act: Activity, private val link: DeviceLink, priv
             r.orientation = LinearLayout.HORIZONTAL
             r.gravity = Gravity.CENTER_VERTICAL
             val sr = StepRow(number("°C", s?.temp), number("ramp s", s?.ramp), number("hold s", s?.hold))
-            for (e in listOf(sr.temp, sr.ramp, sr.hold)) r.addView(e, LinearLayout.LayoutParams(0, WRAP_P, 1f))
+            for (e in listOf(sr.temp, sr.ramp, sr.hold)) {
+                e.addTextChangedListener(watcher)
+                r.addView(e, LinearLayout.LayoutParams(0, WRAP_P, 1f))
+            }
             val del = Button(act)
             del.text = "✕"
             style(del)
             del.setOnClickListener {
                 list.removeView(r)
                 rows.remove(sr)
+                updatePreview()
             }
             r.addView(del)
             rows.add(sr)
             list.addView(r)
         }
         for (s in (p?.steps ?: listOf(ProfileStep(150, 60, 30)))) addStepRow(s)
+        updatePreview()
 
+        val pn = TextView(act)
+        pn.text = "Step 1 ramps from the temperature that is set when you press Start."
+        pn.textSize = 11f
+        sc.addView(preview)
+        sc.addView(pn)
         val addStep = Button(act)
         addStep.text = "Add step"
         style(addStep)
@@ -529,6 +616,11 @@ class ProfilesPage(private val act: Activity, private val link: DeviceLink, priv
     /** measured tip temperature from the live data */
     fun onTemp(t: Float) {
         actual = t
+    }
+
+    /** refreshes the list (the Start buttons depend on the connection) */
+    fun refresh() {
+        if (!editing) showList()
     }
 
     fun onDisconnected() {

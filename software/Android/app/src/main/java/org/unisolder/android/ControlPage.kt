@@ -215,6 +215,7 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
         info = null
         state = null
         showInfo()
+        profiles.refresh()
         io.execute {
             val i = link.appInfo()
             val s = if (i != null && i.protocol >= 1) link.getState() else null
@@ -250,7 +251,7 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
 
     fun onDisconnected() {
         profiles.onDisconnected()
-        profiles.view.visibility = View.GONE
+        profiles.refresh()
         settings.onDisconnected()
         openSettings(false)
         info = null
@@ -295,7 +296,6 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
         sleepButton.isEnabled = on && s != null && !s.inMenu
         saveButton.isEnabled = on
         settingsButton.isEnabled = on && (info?.protocol ?: 0) >= 3
-        profilesButton.isEnabled = on && (info?.protocol ?: 0) >= 1
         restoreButton.isEnabled = on
     }
 
