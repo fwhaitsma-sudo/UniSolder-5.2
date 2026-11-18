@@ -251,7 +251,8 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
             !link.connected -> "Not connected."
             i == null -> "Checking the station firmware ..."
             i.protocol < 1 -> "This station firmware has no remote control. Update the firmware on the Firmware tab."
-            else -> "Station firmware " + i.major + "." + i.minor + ", board " + i.boardName + ", remote control v" + i.protocol
+            else -> "Station firmware " + i.major + "." + i.minor + ", board " + i.boardName + ", remote control v" + i.protocol +
+                    (if (i.protocol < 3) "\nStation settings need firmware with remote control v3: update it on the Firmware tab." else "")
         }
     }
 
