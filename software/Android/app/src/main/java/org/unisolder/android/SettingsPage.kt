@@ -123,7 +123,38 @@ class SettingsPage(private val act: Activity, private val link: DeviceLink, priv
     )
 
     init {
-        val scroll = ScrollView(act)
+        val scroll = object : ScrollView(act) {
+            private var downX = 0f
+            private var downY = 0f
+            private var armed = false
+
+            /** A swipe to the right closes the page, unless it starts on a slider (those are dragged sideways). */
+            override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+                when (ev.actionMasked) {
+                    android.view.MotionEvent.ACTION_DOWN -> {
+                        downX = ev.rawX
+                        downY = ev.rawY
+                        armed = true
+                        val rect = android.graphics.Rect()
+                        for (r in rows) {
+                            val b = r.bar ?: continue
+                            if (b.getGlobalVisibleRect(rect) && rect.contains(ev.rawX.toInt(), ev.rawY.toInt())) armed = false
+                        }
+                    }
+                    android.view.MotionEvent.ACTION_UP -> {
+                        val dx = ev.rawX - downX
+                        val dy = ev.rawY - downY
+                        if (armed && dx > dp(90) && Math.abs(dy) < dx * 0.5f) {
+                            armed = false
+                            onBack()
+                            return true
+                        }
+                    }
+                    android.view.MotionEvent.ACTION_CANCEL -> armed = false
+                }
+                return super.dispatchTouchEvent(ev)
+            }
+        }
         val col = LinearLayout(act)
         col.orientation = LinearLayout.VERTICAL
         col.setPadding(dp(16), dp(8), dp(16), dp(16))
@@ -148,7 +179,7 @@ class SettingsPage(private val act: Activity, private val link: DeviceLink, priv
         col.addView(statusText)
 
         val foot = TextView(act)
-        foot.text = "INPUT, calibration, instrument info and the pincode can only be changed on the station itself."
+        foot.text = "Swipe right or press Back to close. INPUT, calibration, instrument info and the pincode can only be changed on the station itself."
         foot.textSize = 12f
         foot.setPadding(0, dp(16), 0, 0)
         col.addView(foot)
