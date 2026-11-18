@@ -27,7 +27,6 @@ class SettingsPage(private val act: Activity, private val link: DeviceLink, priv
 
     private val ui = Handler(Looper.getMainLooper())
     private val statusText: TextView
-    private val level1: LinearLayout
     private var values = IntArray(29)
     private var loaded = false
     private val rows = ArrayList<Row>()
@@ -56,7 +55,7 @@ class SettingsPage(private val act: Activity, private val link: DeviceLink, priv
         var bar: SeekBar? = null
         var minus: Button? = null
         var plus: Button? = null
-        var choiceButton: Button? = null
+        val segButtons = ArrayList<Button>()
         val send = Runnable { commit(this, current) }
         var current = 0
 
@@ -86,14 +85,15 @@ class SettingsPage(private val act: Activity, private val link: DeviceLink, priv
             valueText.text = text(v)
             val b = bar
             if (b != null) b.progress = toProgress(v)
-            choiceButton?.text = text(v)
+            for ((i, b) in segButtons.withIndex()) b.backgroundTintList = android.content.res.ColorStateList.valueOf(
+                if (spec.lo + i == v) (if (dark) 0xFF3B6FD4.toInt() else 0xFF1A5FC8.toInt()) else (if (dark) 0xFF3E3E46.toInt() else 0xFFD2D2DA.toInt()))
         }
 
         fun setEnabled(on: Boolean) {
             bar?.isEnabled = on
             minus?.isEnabled = on
             plus?.isEnabled = on
-            choiceButton?.isEnabled = on
+            for (b in segButtons) b.isEnabled = on
         }
     }
 
@@ -147,17 +147,38 @@ class SettingsPage(private val act: Activity, private val link: DeviceLink, priv
         statusText.setPadding(0, dp(8), 0, dp(8))
         col.addView(statusText)
 
-        level1 = LinearLayout(act)
-        level1.orientation = LinearLayout.VERTICAL
-        col.addView(level1)
-
         val foot = TextView(act)
         foot.text = "INPUT, calibration, instrument info and the pincode can only be changed on the station itself."
         foot.textSize = 12f
         foot.setPadding(0, dp(16), 0, 0)
         col.addView(foot)
 
-        for (s in level1Specs) addRow(level1, s)
+        val sections = listOf(
+            "Temperatures" to listOf(0, 1, 2, 22, 3, 4),
+            "Sleep and stand-by" to listOf(5, 6, 11, 7),
+            "Display and sound" to listOf(8, 9, 28, 27),
+            "Knob and sensor" to listOf(18, 19, 13)
+        )
+        var at = col.indexOfChild(statusText) + 1
+        for ((title, ids) in sections) {
+            val card = LinearLayout(act)
+            card.orientation = LinearLayout.VERTICAL
+            card.setPadding(dp(14), dp(10), dp(14), dp(10))
+            val bg = android.graphics.drawable.GradientDrawable()
+            bg.cornerRadius = dp(16).toFloat()
+            bg.setColor(if (dark) 0xFF1D1D21.toInt() else 0xFFFFFFFF.toInt())
+            card.background = bg
+            val h = TextView(act)
+            h.text = title
+            h.textSize = 14f
+            h.setTypeface(null, android.graphics.Typeface.BOLD)
+            h.setTextColor(if (dark) 0xFF8AB4F8.toInt() else 0xFF1A5FC8.toInt())
+            card.addView(h)
+            for (id in ids) addRow(card, level1Specs.first { it.id == id })
+            val lp = LinearLayout.LayoutParams(MATCH_P, WRAP_P)
+            lp.topMargin = dp(12)
+            col.addView(card, at++, lp)
+        }
 
         scroll.addView(col, ViewGroup.LayoutParams(MATCH_P, WRAP_P))
         scroll.setBackgroundColor(if (dark) 0xFF101012.toInt() else 0xFFF6F6F8.toInt())
@@ -167,6 +188,11 @@ class SettingsPage(private val act: Activity, private val link: DeviceLink, priv
 
     private fun addRow(parent: LinearLayout, s: Spec) {
         val r = Row(s)
+        if (parent.childCount > 1) {
+            val line = View(act)
+            line.setBackgroundColor(if (dark) 0xFF2E2E34.toInt() else 0xFFE0E0E6.toInt())
+            parent.addView(line, LinearLayout.LayoutParams(MATCH_P, dp(1)).also { it.topMargin = dp(8) })
+        }
         r.box.orientation = LinearLayout.VERTICAL
         r.box.setPadding(0, dp(10), 0, dp(4))
         val head = LinearLayout(act)
@@ -181,11 +207,20 @@ class SettingsPage(private val act: Activity, private val link: DeviceLink, priv
         r.box.addView(head, LinearLayout.LayoutParams(MATCH_P, WRAP_P))
 
         if (s.kind == Kind.CHOICE || s.kind == Kind.DEGREES) {
-            val b = Button(act)
-            style(b)
-            b.setOnClickListener { chooseDialog(r) }
-            r.choiceButton = b
-            r.box.addView(b, LinearLayout.LayoutParams(MATCH_P, WRAP_P))
+            val seg = LinearLayout(act)
+            seg.orientation = LinearLayout.HORIZONTAL
+            for ((i, label) in s.choices.withIndex()) {
+                val b = Button(act)
+                b.text = label
+                b.tag = "multiline"
+                b.isAllCaps = false
+                b.minHeight = dp(44)
+                b.minimumHeight = dp(44)
+                b.setOnClickListener { commit(r, s.lo + i) }
+                r.segButtons.add(b)
+                seg.addView(b, LinearLayout.LayoutParams(0, WRAP_P, 1f).also { it.marginEnd = if (i < s.choices.size - 1) dp(6) else 0 })
+            }
+            r.box.addView(seg, LinearLayout.LayoutParams(MATCH_P, WRAP_P))
         } else {
             val line = LinearLayout(act)
             line.orientation = LinearLayout.HORIZONTAL
@@ -241,17 +276,6 @@ class SettingsPage(private val act: Activity, private val link: DeviceLink, priv
         r.show(r.toValue(p))
         ui.removeCallbacks(r.send)
         ui.postDelayed(r.send, 400)
-    }
-
-    private fun chooseDialog(r: Row) {
-        AlertDialog.Builder(act)
-            .setTitle(r.spec.name)
-            .setSingleChoiceItems(r.spec.choices.toTypedArray(), r.current - r.spec.lo) { d, which ->
-                d.dismiss()
-                commit(r, r.spec.lo + which)
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
     }
 
     private fun commit(r: Row, value: Int) {
