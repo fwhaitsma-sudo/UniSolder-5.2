@@ -44,9 +44,9 @@ Update this file and commit after each finished item, so a new session can conti
   - [x] 17.1 UniSolderComm: GetAppInfo/GetState/SetTemperature/SelectPreset/Sleep/SwitchIron/PidSave/PidClear/PidSaved/ReadSettings/WriteSettings/RestartDevice; Form1 now has tabs Live/Control/PID/Firmware (designer controls moved at run time in BuildTabs); ControlTab.cs (temperature slider, presets, sleep, switch iron, settings backup/restore in the Android file format). Built OK on CI, NOT tested on a PC yet.
   - [ ] 17.2 Tools tab; [ ] 17.3 PID tools tab; [ ] 17.4 Bluetooth; [ ] 17.5 look (dark theme, rounded buttons)
 - [ ] 18. (user request 2026-11-17) Station settings in the Android app, same options as the device menu: level 1 = T1-T4, HOLDER T, SLEEP T, SLEEP time, STAND-BY time, WAKE UP, DEGREES, BRIGHTNESS, SOUND, TEMP.STEP, DISP.STEP; Advanced = ROTATION, BUTTONS, MENU DOWN, HOLDER sensor, SENSOR FLT, SND PITCH. Device-only (not in the app): INPUT, CALIBRATE, INST.INFO, VERSION, PINCODE; TIP PRESET excluded (paused); NAME maybe later.
-  - [x] 18.1 firmware: 0x40 read all (29 x u16, menu units), 0x41 set [id, lo, hi] -> [id, status, lo, hi] (0 ok, 1 not settable, 2 range, 3 station in menu); menu.c RemoteGetParam/RemoteSetParam; protocol byte now 3 (TIP PRESET 16c will need 4). Pushed, see CI.
+  - [x] 18.1 firmware: 0x40 read all (29 x u16, menu units), 0x41 set [id, lo, hi] -> [id, status, lo, hi] (0 ok, 1 not settable, 2 range, 3 station in menu); menu.c RemoteGetParam/RemoteSetParam; protocol byte now 3 (TIP PRESET 16c will need 4). Built OK on CI (fw-rc pre-release).
   - [x] 18.2 app: DeviceLink getParams/setParam, SettingsPage (opened from Control tab), advanced section
-  - [ ] 18.3 CI build, user test; manual + changelog only after the test
+  - [ ] 18.3 CI builds OK (firmware + app pre-releases on remote-control); waiting for user hardware test; manual + changelog only after the test
 - [ ] 14. Changelog entries, user test, merge when the user says so
 
 ## Facts found (do not re-research)
