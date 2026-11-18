@@ -601,6 +601,21 @@ class DeviceLink(private val ctx: Context) {
         return Pair(r.u(1), r.u16(2))
     }
 
+    /** The power-up name (up to 10 characters, trailing spaces removed), null when the firmware has no name command (protocol 4). */
+    fun getName(): String? {
+        val r = send(byteArrayOf(CMD_GET_NAME), 1000) ?: return null
+        return String(CharArray(10) { r.u(it).toChar() }).trimEnd()
+    }
+
+    /** 0 done, 2 character not allowed, 3 station is in its menu, null no answer. */
+    fun setName(name: String): Int? {
+        val b = ByteArray(11)
+        b[0] = CMD_SET_NAME
+        val padded = name.padEnd(10, ' ').substring(0, 10)
+        for (i in 0 until 10) b[i + 1] = padded[i].code.toByte()
+        return send(b, 1500)?.u(0)
+    }
+
     /** The 64 settings bytes of the station (the pincode is left out by the firmware), or null. */
     fun readSettings(): ByteArray? {
         val out = ByteArray(SETTINGS_SIZE)
@@ -652,6 +667,8 @@ class DeviceLink(private val ctx: Context) {
         const val CMD_PID_SAVED: Byte = 0x17
         const val CMD_GET_PARAMS: Byte = 0x40
         const val CMD_SET_PARAM: Byte = 0x41
+        const val CMD_GET_NAME: Byte = 0x42
+        const val CMD_SET_NAME: Byte = 0x43
         const val CMD_PRESET: Byte = 0x12
         const val CMD_SLEEP: Byte = 0x13
         const val CMD_SWITCH_IRON: Byte = 0x14

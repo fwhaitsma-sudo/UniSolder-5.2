@@ -48,6 +48,8 @@ extern int RemoteSleep(int sleep);                     /*1 = manual sleep, 0 = w
 extern int RemoteSwitchIron(void);                     /*two-iron adapter: switch iron; returns the active iron*/
 extern unsigned int RemoteGetParam(int p);             /*setting p in menu units (degrees for T1-T4, HOLDER T, SLEEP T)*/
 extern int RemoteSetParam(int p, unsigned int v);      /*0 done, 1 not settable, 2 out of range, 3 station is in its menu*/
+extern void RemoteGetName(char * out);                 /*NAME_LEN characters, padded with spaces*/
+extern int RemoteSetName(const unsigned char * in);    /*0 done, 2 bad character, 3 station is in its menu*/
 
 extern void MenuInit();
 extern void MenuTasks(int powerLost);

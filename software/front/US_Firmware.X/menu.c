@@ -301,6 +301,24 @@ int RemoteSwitchIron(void){
     return pars.ActIron;
 }
 
+//Name shown at power-up: NAME_LEN characters padded with spaces (the characters of the menu's name editor).
+void RemoteGetName(char * out){
+    int k;
+    for(k = 0; k < NAME_LEN; k++) out[k] = UserName[k] ? UserName[k] : ' ';
+}
+
+//Returns 0 done, 2 character not allowed, 3 station is in its menu.
+int RemoteSetName(const unsigned char * in){
+    int k;
+    if(!(CMode == DEFAULT_MENU || CMode == SET_TEMPERATURE || CMode == RESET_TEMPERATURE || CMode == STANDBY)) return 3;
+    for(k = 0; k < NAME_LEN; k++) if(!in[k] || !strchr(NameChars, in[k])) return 2;
+    for(k = 0; k < NAME_LEN; k++) UserName[k] = in[k];
+    UserName[NAME_LEN] = 0;
+    for(k = NAME_LEN - 1; k >= 0 && UserName[k] == ' '; k--) UserName[k] = 0;
+    SaveName();
+    return 0;
+}
+
 //Settings from the phone or PC. Values are in menu units: degrees for T1-T4, HOLDER T and SLEEP T, the raw value otherwise.
 static int RemoteParAllowed(int p){
     return (p >= 0 && p <= 14) || p == 18 || p == 19 || p == 22 || p == 27 || p == 28;

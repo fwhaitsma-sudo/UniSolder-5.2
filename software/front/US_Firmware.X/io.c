@@ -124,13 +124,13 @@ static int HandleCommand(void){
                     done = 1;
                 }
                 break;
-            case 0x80: //application info: [version minor, version major, board version, protocol (1 = remote control + settings, 2 = PID save, 3 = live settings 0x40/0x41)]
+            case 0x80: //application info: [version minor, version major, board version, protocol (1 = remote control + settings, 2 = PID save, 3 = live settings 0x40/0x41, 4 = name 0x42/0x43)]
                 if(!TxBusy()){
                     cTX->Command = 0x80;
                     cTX->Data[0] = VERSION_MINOR;
                     cTX->Data[1] = VERSION_MAJOR;
                     cTX->Data[2] = BoardVersion;
-                    cTX->Data[3] = 3;
+                    cTX->Data[3] = 4;
                     TxSend();
                     done = 1;
                 }
@@ -232,6 +232,25 @@ static int HandleCommand(void){
                     cTX->Data[0] = p;
                     cTX->Data[1] = st;
                     Put16(2, RemoteGetParam(p));
+                    TxSend();
+                    done = 1;
+                }
+                break;
+            case 0x42: //read the power-up name; replies NAME_LEN characters padded with spaces
+                if(!TxBusy()){
+                    int i;
+                    char nm[NAME_LEN];
+                    RemoteGetName(nm);
+                    cTX->Command = 0x42;
+                    for(i = 0; i < NAME_LEN; i++) cTX->Data[i] = nm[i];
+                    TxSend();
+                    done = 1;
+                }
+                break;
+            case 0x43: //set the power-up name [NAME_LEN characters]; replies [status 0 done, 2 bad character, 3 station in menu]
+                if(!TxBusy()){
+                    cTX->Command = 0x43;
+                    cTX->Data[0] = RemoteSetName((const unsigned char *)&cRX->Data[0]);
                     TxSend();
                     done = 1;
                 }
