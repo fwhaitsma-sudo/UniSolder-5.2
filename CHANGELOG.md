@@ -42,6 +42,7 @@ Only what is in the firmware now is listed. Reverted and superseded changes are 
 ## Remote control and wireless link
 
 - **Remote control commands:** the station answers USB commands to read its state, set the temperature (same limits as the knob), select a preset, sleep/wake, switch iron, and read/write the settings block (backup and restore).
+- **Settings over USB/Bluetooth (protocol 4):** read all menu settings and change one at a time, applied at once with the same rules as the menu (commands 0x40/0x41), and read/set the power-up name (0x42/0x43). The station refuses while it is in its own menu. INPUT, calibration, instrument info, rotation, buttons, menu down and the pincode stay device-only.
 - **UART2 link for a Bluetooth bridge:** the same commands also work over UART2 (RF4 receive, RF5 transmit, 115200 baud), framed with a CRC. Live data is sent only while the app is sending. Firmware update is only possible over USB.
 - **ESP32 Bluetooth bridge** (`software/esp32/UniSolderBridge`): Bluetooth Classic link between phone and station, protected by a PIN (default 0000, changeable from the app). The workflow "Build ESP32 bridge" builds the file to flash.
 - **Room sensor glitch filter:** single bad readings of the room temperature sensor (more than about 4 degrees from the running average) are ignored, which removes short spikes in the displayed temperature.
@@ -54,6 +55,7 @@ Only what is in the firmware now is listed. Reverted and superseded changes are 
 
 ## Android application
 
+- **Station settings page** (Control tab, needs firmware protocol 4 for the name, 3 for the rest): T1-T4, holder and sleep temperature, sleep and stand-by time, wake up, holder sensor, degrees, brightness, sound and pitch, temperature and display step, sensor filter and the power-up name, in grouped cards. Swipe right or Back closes it.
 - **Android version of the Windows application** (`software/Android`, needs a phone with USB host / OTG): connects to the station over USB and has three tabs. *Live* shows a scrolling temperature chart (set temperature, actual temperature, duty, power, reached, filtered and ADC, each switchable, with pause). *PID* reads and sets Kp, Ki, DGain, OVFGain and Gain. *Firmware* checks a `.hex` file and updates the station through the bootloader, with a confirmation and a progress bar.
 - **Later additions:** *Control* tab (set temperature, presets, sleep, switch iron, station info, settings backup/restore), *Tools* tab (session recording with CSV export, tip health, alerts, bench dashboard), PID step-response analysis and saved PID sets, extra diagnostic chart traces, and a Bluetooth connection with PIN to the ESP32 bridge.
 - **App icon:** a yellow U that bends into a temperature curve up to a dashed set-temperature line.
