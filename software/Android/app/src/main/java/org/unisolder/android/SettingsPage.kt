@@ -18,8 +18,8 @@ import java.util.concurrent.ExecutorService
 
 /**
  * Station settings: the same options as the menu on the station (firmware protocol 3, commands 0x40/0x41).
- * Level 1 holds the common settings, 'Advanced' the rest. Changes are applied in the station at once.
- * Not here (device only): INPUT, CALIBRATE, INST.INFO, VERSION, PINCODE.
+ * Changes are applied in the station at once.
+ * Not here: INPUT, CALIBRATE, INST.INFO, VERSION, PINCODE, ROTATION, BUTTONS, MENU DOWN.
  */
 class SettingsPage(private val act: Activity, private val link: DeviceLink, private val io: ExecutorService) {
     val view: View
@@ -28,11 +28,16 @@ class SettingsPage(private val act: Activity, private val link: DeviceLink, priv
     private val ui = Handler(Looper.getMainLooper())
     private val statusText: TextView
     private val level1: LinearLayout
-    private val advanced: LinearLayout
-    private val advButton: Button
     private var values = IntArray(29)
     private var loaded = false
     private val rows = ArrayList<Row>()
+
+    /** Buttons lighter than the page so they stand out (the theme's own button colour is too close to the background). */
+    private fun style(b: Button) {
+        val bg = android.util.TypedValue()
+        val dark = act.theme.resolveAttribute(android.R.attr.colorBackground, bg, true) && android.graphics.Color.luminance(bg.data) < 0.5f
+        b.backgroundTintList = android.content.res.ColorStateList.valueOf(if (dark) 0xFF54545C.toInt() else 0xFFB8B8C2.toInt())
+    }
 
     private fun dp(v: Int): Int = (v * act.resources.displayMetrics.density).toInt()
 
@@ -110,13 +115,7 @@ class SettingsPage(private val act: Activity, private val link: DeviceLink, priv
         Spec(9, "Brightness", Kind.NUMBER, 1, 15),
         Spec(28, "Sound", Kind.CHOICE, 0, 1, choices = listOf("OFF", "ON")),
         Spec(18, "Temperature step", Kind.NUMBER, 1, 50, unit = "°", note = "Step of the knob when setting the temperature."),
-        Spec(19, "Display step", Kind.NUMBER, 1, 5, unit = "°", note = "Resolution of the shown temperature.")
-    )
-
-    private val advancedSpecs = listOf(
-        Spec(12, "Display rotation", Kind.CHOICE, 0, 1, choices = listOf("0°", "180°")),
-        Spec(10, "Buttons", Kind.CHOICE, 0, 1, choices = listOf("+ / −", "− / +"), note = "Direction of the knob."),
-        Spec(14, "Menu down", Kind.CHOICE, 0, 1, choices = listOf("KEY+", "KEY−")),
+        Spec(19, "Display step", Kind.NUMBER, 1, 5, unit = "°", note = "Resolution of the shown temperature."),
         Spec(7, "Holder sensor", Kind.CHOICE, 0, 2, choices = listOf("OFF", "ON", "AUTO")),
         Spec(13, "Sensor filter", Kind.NUMBER, 0, 255, zeroLabel = "OFF"),
         Spec(27, "Sound pitch", Kind.NUMBER, 1, 9)
@@ -133,6 +132,7 @@ class SettingsPage(private val act: Activity, private val link: DeviceLink, priv
         top.gravity = Gravity.CENTER_VERTICAL
         val back = Button(act)
         back.text = "‹ Back"
+        style(back)
         back.setOnClickListener { onBack() }
         top.addView(back)
         val title = TextView(act)
@@ -150,22 +150,6 @@ class SettingsPage(private val act: Activity, private val link: DeviceLink, priv
         level1.orientation = LinearLayout.VERTICAL
         col.addView(level1)
 
-        advanced = LinearLayout(act)
-        advanced.orientation = LinearLayout.VERTICAL
-        advanced.visibility = View.GONE
-
-        advButton = Button(act)
-        advButton.text = "Advanced ▸"
-        advButton.setOnClickListener {
-            val open = advanced.visibility != View.VISIBLE
-            advanced.visibility = if (open) View.VISIBLE else View.GONE
-            advButton.text = if (open) "Advanced ▾" else "Advanced ▸"
-        }
-        col.addView(advButton, LinearLayout.LayoutParams(MATCH_P, WRAP_P).also { it.topMargin = dp(16) })
-
-
-        col.addView(advanced)
-
         val foot = TextView(act)
         foot.text = "INPUT, calibration, instrument info and the pincode can only be changed on the station itself."
         foot.textSize = 12f
@@ -173,7 +157,6 @@ class SettingsPage(private val act: Activity, private val link: DeviceLink, priv
         col.addView(foot)
 
         for (s in level1Specs) addRow(level1, s)
-        for (s in advancedSpecs) addRow(advanced, s)
 
         scroll.addView(col, ViewGroup.LayoutParams(MATCH_P, WRAP_P))
         val tv = android.util.TypedValue()
@@ -199,6 +182,7 @@ class SettingsPage(private val act: Activity, private val link: DeviceLink, priv
 
         if (s.kind == Kind.CHOICE || s.kind == Kind.DEGREES) {
             val b = Button(act)
+            style(b)
             b.setOnClickListener { chooseDialog(r) }
             r.choiceButton = b
             r.box.addView(b, LinearLayout.LayoutParams(MATCH_P, WRAP_P))
@@ -208,8 +192,10 @@ class SettingsPage(private val act: Activity, private val link: DeviceLink, priv
             line.gravity = Gravity.CENTER_VERTICAL
             val m = Button(act)
             m.text = "−"
+            style(m)
             val p = Button(act)
             p.text = "+"
+            style(p)
             val sb = SeekBar(act)
             sb.max = r.maxProgress()
             sb.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
