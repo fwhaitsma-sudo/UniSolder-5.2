@@ -218,6 +218,7 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
 
     private fun openSettings(open: Boolean) {
         settings.view.visibility = if (open) View.VISIBLE else View.GONE
+        (view as android.widget.FrameLayout).getChildAt(0).visibility = if (open) View.GONE else View.VISIBLE
         if (open) settings.reload()
     }
 

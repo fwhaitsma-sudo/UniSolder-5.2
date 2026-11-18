@@ -176,6 +176,8 @@ class SettingsPage(private val act: Activity, private val link: DeviceLink, priv
         for (s in advancedSpecs) addRow(advanced, s)
 
         scroll.addView(col, ViewGroup.LayoutParams(MATCH_P, WRAP_P))
+        val tv = android.util.TypedValue()
+        if (act.theme.resolveAttribute(android.R.attr.colorBackground, tv, true)) scroll.setBackgroundColor(tv.data)
         view = scroll
         enableAll(false)
     }
