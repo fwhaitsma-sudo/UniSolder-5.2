@@ -650,6 +650,31 @@ class DeviceLink(private val ctx: Context) {
         return true
     }
 
+    /** The 8 saved PID slots of the station (12 bytes each, zeros = empty). Needs protocol 5. */
+    fun readPidSlots(): List<ByteArray>? {
+        val out = ArrayList<ByteArray>()
+        for (slot in 0 until PID_SLOTS) {
+            val r = send(byteArrayOf(CMD_PID_SLOT_READ, slot.toByte()), 1500) ?: return null
+            if (r.u(1) != 0) return null
+            out.add(ByteArray(PID_SLOT_LEN) { r[2 + it] })
+        }
+        return out
+    }
+
+    fun writePidSlots(slots: List<ByteArray>): Boolean {
+        for ((slot, data) in slots.withIndex()) {
+            val b = ByteArray(3 + 1 + PID_SLOT_LEN)
+            b[0] = CMD_PID_SLOT_WRITE
+            b[1] = 0x5A
+            b[2] = 0xA5.toByte()
+            b[3] = slot.toByte()
+            System.arraycopy(data, 0, b, 4, PID_SLOT_LEN)
+            val r = send(b, 3000) ?: return false
+            if (r.u(0) != 0) return false
+        }
+        return true
+    }
+
     fun restartDevice() {
         AppLog.info("Restart station")
         send(byteArrayOf(CMD_RESTART, 0x5A, 0xA5.toByte()), 0)
@@ -669,6 +694,10 @@ class DeviceLink(private val ctx: Context) {
         const val CMD_SET_PARAM: Byte = 0x41
         const val CMD_GET_NAME: Byte = 0x42
         const val CMD_SET_NAME: Byte = 0x43
+        const val CMD_PID_SLOT_READ: Byte = 0x44
+        const val CMD_PID_SLOT_WRITE: Byte = 0x45
+        const val PID_SLOTS = 8
+        const val PID_SLOT_LEN = 12
         const val CMD_PRESET: Byte = 0x12
         const val CMD_SLEEP: Byte = 0x13
         const val CMD_SWITCH_IRON: Byte = 0x14

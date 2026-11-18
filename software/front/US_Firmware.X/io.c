@@ -124,13 +124,13 @@ static int HandleCommand(void){
                     done = 1;
                 }
                 break;
-            case 0x80: //application info: [version minor, version major, board version, protocol (1 = remote control + settings, 2 = PID save, 3 = live settings 0x40/0x41, 4 = name 0x42/0x43)]
+            case 0x80: //application info: [version minor, version major, board version, protocol (1 = remote control + settings, 2 = PID save, 3 = live settings 0x40/0x41, 4 = name 0x42/0x43, 5 = saved PID backup 0x44/0x45)]
                 if(!TxBusy()){
                     cTX->Command = 0x80;
                     cTX->Data[0] = VERSION_MINOR;
                     cTX->Data[1] = VERSION_MAJOR;
                     cTX->Data[2] = BoardVersion;
-                    cTX->Data[3] = 4;
+                    cTX->Data[3] = 5;
                     TxSend();
                     done = 1;
                 }
@@ -251,6 +251,36 @@ static int HandleCommand(void){
                 if(!TxBusy()){
                     cTX->Command = 0x43;
                     cTX->Data[0] = RemoteSetName((const unsigned char *)&cRX->Data[0]);
+                    TxSend();
+                    done = 1;
+                }
+                break;
+            case 0x44: //read saved PID slot [slot 0-7]; replies [slot, status (0 ok, 2 bad slot), 12 bytes, zeros = empty]
+                if(!TxBusy()){
+                    UINT8 sb[12];
+                    int i;
+                    int sl = cRX->Data[0];
+                    int st = IronPidSlotRead(sl, sb);
+                    cTX->Command = 0x44;
+                    cTX->Data[0] = sl;
+                    cTX->Data[1] = st;
+                    for(i = 0; i < 12; i++) cTX->Data[2 + i] = st ? 0 : sb[i];
+                    TxSend();
+                    done = 1;
+                }
+                break;
+            case 0x45: //write saved PID slot [key 0x5A 0xA5, slot, 12 bytes]; replies [status] (0 ok, 1 bad key, 2 bad slot or values)
+                if(!TxBusy()){
+                    UINT8 sb[12];
+                    int i;
+                    cTX->Command = 0x45;
+                    if(cRX->Data[0] != REMOTE_KEY0 || cRX->Data[1] != REMOTE_KEY1){
+                        cTX->Data[0] = 1;
+                    }
+                    else{
+                        for(i = 0; i < 12; i++) sb[i] = cRX->Data[3 + i];
+                        cTX->Data[0] = IronPidSlotWrite(cRX->Data[2], sb);
+                    }
                     TxSend();
                     done = 1;
                 }

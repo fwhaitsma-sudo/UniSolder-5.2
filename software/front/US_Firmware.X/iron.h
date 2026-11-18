@@ -82,6 +82,8 @@ IRON_H_EXTERN void IronTasks();
 IRON_H_EXTERN int IronPairActive(void);     //nonzero when a two-iron adapter is connected
 IRON_H_EXTERN void IronPairReload(void);
 IRON_H_EXTERN void TipApplyActive(void);     //put the PID values of the tip in use (or the iron's own) on the iron
+IRON_H_EXTERN int IronPidSlotRead(int slot, UINT8 *buf);          //saved PID slot for backup: 12 bytes (zeros = empty), 0 ok
+IRON_H_EXTERN int IronPidSlotWrite(int slot, const UINT8 *buf);   //restore a saved PID slot: 0 ok, 2 bad slot or values
 IRON_H_EXTERN int IronPidSave(void);        //save the PID values now in use for this iron in the EEPROM (0 ok)
 IRON_H_EXTERN int IronPidClear(void);       //restore the built-in PID values of this iron and forget saved ones (0 forgotten, 2 none saved)
 IRON_H_EXTERN int IronPidIsSaved(void);     //nonzero when this iron has saved PID values    //load the iron selected by pars.ActIron

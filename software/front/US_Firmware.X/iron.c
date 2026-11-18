@@ -1043,6 +1043,35 @@ static int PidValid(UINT16 gain, UINT16 kp, UINT16 ki, UINT8 dg, UINT8 ovs) {
 	return gain >= 8 && gain <= 256 && kp <= 32767 && ki <= 32767 && dg <= 32 && ovs <= 100;
 }
 
+//Backup and restore of the saved PID slots from the phone app. A slot is its first PIDS_LEN bytes; an empty slot reads as zeros.
+int IronPidSlotRead(int slot, UINT8 *buf) {
+	int i;
+	if (slot < 0 || slot >= PIDS_SLOTS) return 2;
+	EEPRead(PIDS_ADDR + slot * PIDS_STRIDE, buf, PIDS_LEN);
+	if (buf[0] != PIDS_MARK) for (i = 0; i < PIDS_LEN; i++) buf[i] = 0;
+	return 0;
+}
+
+//0 ok, 2 bad slot or values out of range. All zeros (or any first byte other than the mark) empties the slot.
+int IronPidSlotWrite(int slot, const UINT8 *buf) {
+	UINT8 old[PIDS_LEN];
+	int i;
+	if (slot < 0 || slot >= PIDS_SLOTS) return 2;
+	EEPRead(PIDS_ADDR + slot * PIDS_STRIDE, old, PIDS_LEN);
+	if (buf[0] != PIDS_MARK) {
+		if (old[0] == PIDS_MARK) EEPWriteImm(PIDS_ADDR + slot * PIDS_STRIDE, 0xFF);
+		return 0;
+	}
+	if (!PidValid((UINT16)(buf[4] | (buf[5] << 8)), (UINT16)(buf[6] | (buf[7] << 8)), (UINT16)(buf[8] | (buf[9] << 8)), buf[10], buf[11])) return 2;
+	if (buf[3] > 1) return 2;
+	if (old[0] == PIDS_MARK) EEPWriteImm(PIDS_ADDR + slot * PIDS_STRIDE, 0xFF);   //the mark goes last
+	for (i = 1; i < PIDS_LEN; i++) {
+		if (old[i] != buf[i]) EEPWriteImm(PIDS_ADDR + slot * PIDS_STRIDE + i, buf[i]);
+	}
+	EEPWriteImm(PIDS_ADDR + slot * PIDS_STRIDE, PIDS_MARK);
+	return 0;
+}
+
 //Saves the PID values now in use for the connected iron. Returns 0 on success, 1 no iron, 2 values out of range, 3 EEPROM full.
 int IronPidSave(void) {
 	UINT8 buf[PIDS_LEN], nb[PIDS_LEN];

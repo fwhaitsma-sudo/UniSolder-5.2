@@ -170,7 +170,7 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
         backupTitle.setPadding(0, dp(24), 0, dp(4))
         col.addView(backupTitle)
         val backupNote = TextView(act)
-        backupNote.text = "Saves all menu settings, the name and the odd degrees of the presets to a file on the phone. " +
+        backupNote.text = "Saves all menu settings, the name, the odd degrees of the presets and the PID values saved in the station to a file on the phone. " +
                 "Restoring writes them back and restarts the station. The menu pincode is not included."
         col.addView(backupNote)
         saveButton = Button(act)
@@ -407,12 +407,13 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
             val data = link.readSettings()
             val s = link.getState()
             val i = info
+            val pid = if (data != null && (i?.protocol ?: 0) >= 5) link.readPidSlots() else null
             ui.post {
                 saveButton.isEnabled = link.connected
                 if (data == null) {
                     toast("Could not read the settings from the station")
                 } else {
-                    backupText = BackupFile.format(data, i, s)
+                    backupText = BackupFile.format(data, i, s, pid)
                     val name = "unisolder-settings-" + SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(Date()) + ".txt"
                     val intent = Intent(Intent.ACTION_CREATE_DOCUMENT)
                     intent.addCategory(Intent.CATEGORY_OPENABLE)
@@ -459,7 +460,7 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
             } else {
                 AlertDialog.Builder(act).setTitle("Restore settings")
                     .setMessage("Write the settings from this file to the station?\n\n" + parsed.summary + "\n\nThe station restarts afterwards.")
-                    .setPositiveButton("Restore") { _, _ -> restore(parsed.data) }
+                    .setPositiveButton("Restore") { _, _ -> restore(parsed.data, parsed.pid) }
                     .setNegativeButton("Cancel", null)
                     .show()
             }
@@ -467,10 +468,11 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
         return true
     }
 
-    private fun restore(data: ByteArray) {
+    private fun restore(data: ByteArray, pid: List<ByteArray>?) {
         restoreButton.isEnabled = false
         io.execute {
-            val ok = link.writeSettings(data)
+            var ok = link.writeSettings(data)
+            if (ok && pid != null && (info?.protocol ?: 0) >= 5) ok = link.writePidSlots(pid)
             if (ok) link.restartDevice()
             ui.post {
                 restoreButton.isEnabled = link.connected
@@ -497,9 +499,9 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
 
 /** Text format of the settings backup file. */
 object BackupFile {
-    class Parsed(val data: ByteArray, val summary: String)
+    class Parsed(val data: ByteArray, val summary: String, val pid: List<ByteArray>?)
 
-    fun format(data: ByteArray, info: AppInfo?, state: DeviceState?): String {
+    fun format(data: ByteArray, info: AppInfo?, state: DeviceState?, pid: List<ByteArray>? = null): String {
         val sb = StringBuilder()
         sb.append("UniSolder settings backup\n")
         sb.append("version=1\n")
@@ -509,6 +511,11 @@ object BackupFile {
         sb.append("data=")
         for (b in data) sb.append(String.format(Locale.US, "%02X", b.toInt() and 0xFF))
         sb.append('\n')
+        if (pid != null) {
+            sb.append("pid=")
+            for (slot in pid) for (b in slot) sb.append(String.format(Locale.US, "%02X", b.toInt() and 0xFF))
+            sb.append('\n')
+        }
         return sb.toString()
     }
 
@@ -524,7 +531,19 @@ object BackupFile {
         } catch (e: NumberFormatException) {
             return null
         }
-        val summary = lines.filter { it.startsWith("saved=") || it.startsWith("firmware=") }.joinToString("\n")
-        return Parsed(out, summary)
+        var pid: List<ByteArray>? = null
+        val pidLine = lines.firstOrNull { it.startsWith("pid=") }
+        val n = DeviceLink.PID_SLOTS * DeviceLink.PID_SLOT_LEN
+        if (pidLine != null && pidLine.length == 4 + n * 2) {
+            try {
+                val raw = ByteArray(n) { pidLine.substring(4 + it * 2, 6 + it * 2).toInt(16).toByte() }
+                pid = List(DeviceLink.PID_SLOTS) { raw.copyOfRange(it * DeviceLink.PID_SLOT_LEN, (it + 1) * DeviceLink.PID_SLOT_LEN) }
+            } catch (e: NumberFormatException) {
+                return null
+            }
+        }
+        var summary = lines.filter { it.startsWith("saved=") || it.startsWith("firmware=") }.joinToString("\n")
+        if (pid != null) summary += "\nSaved PID values: " + pid.count { it[0].toInt() and 0xFF == 0xC7 } + " iron(s)"
+        return Parsed(out, summary, pid)
     }
 }
