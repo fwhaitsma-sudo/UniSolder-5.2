@@ -30,6 +30,7 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
     val view: View
     private val settings = SettingsPage(act, link, io)
     private val profiles = ProfilesPage(act, link, io)
+    private val ramp = RampPage(act, link, io)
     private val profilesButton: Button
     private val settingsButton: Button
     private val ui = Handler(Looper.getMainLooper())
@@ -171,6 +172,11 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
         profilesButton.setOnClickListener { profiles.view.visibility = View.VISIBLE; profiles.showListNow() }
         col.addView(profilesButton, LinearLayout.LayoutParams(MATCH_P, WRAP_P).also { it.topMargin = dp(8) })
 
+        val rampButton = Button(act)
+        rampButton.text = "Ramp mode"
+        rampButton.setOnClickListener { ramp.view.visibility = View.VISIBLE; ramp.setVisible(true) }
+        col.addView(rampButton, LinearLayout.LayoutParams(MATCH_P, WRAP_P).also { it.topMargin = dp(8) })
+
         val backupTitle = TextView(act)
         backupTitle.text = "Settings backup"
         backupTitle.textSize = 18f
@@ -193,11 +199,15 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
         frame.addView(scroll, ViewGroup.LayoutParams(MATCH_P, MATCH_P))
         frame.addView(settings.view, ViewGroup.LayoutParams(MATCH_P, MATCH_P))
         frame.addView(profiles.view, ViewGroup.LayoutParams(MATCH_P, MATCH_P))
+        frame.addView(ramp.view, ViewGroup.LayoutParams(MATCH_P, MATCH_P))
         settings.view.visibility = View.GONE
         profiles.view.visibility = View.GONE
+        ramp.view.visibility = View.GONE
         settings.onBack = { openSettings(false) }
         profiles.onBack = { profiles.view.visibility = View.GONE }
         profiles.protocol = { info?.protocol ?: 0 }
+        ramp.protocol = { info?.protocol ?: 0 }
+        ramp.onBack = { ramp.view.visibility = View.GONE; ramp.setVisible(false) }
         profiles.onRunChanged = { n -> profilesButton.text = if (n == null) "Soldering profiles" else "Soldering profiles (running: " + n + ")" }
         view = frame
         enableControls(false)
@@ -230,6 +240,11 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
 
     /** Closes the settings page when it is open; returns true if it was. */
     fun closeSettings(): Boolean {
+        if (ramp.view.visibility == View.VISIBLE) {
+            ramp.view.visibility = View.GONE
+            ramp.setVisible(false)
+            return true
+        }
         if (profiles.view.visibility == View.VISIBLE) {
             profiles.view.visibility = View.GONE
             return true
@@ -251,6 +266,7 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
     }
 
     fun onDisconnected() {
+        ramp.onDisconnected()
         profiles.onDisconnected()
         profiles.refresh()
         settings.onDisconnected()

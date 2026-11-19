@@ -40,6 +40,9 @@ class Pid(
 )
 
 /** Answer of the application info command. protocol >= 1 means the firmware supports remote control and settings backup. */
+/** Ramp mode status (firmware protocol 7): state 0 off, 1 idle, 2 ramp, 3 peak, 4 cool down, 5 lockout. */
+class RampStatus(val state: Int, val ready: Boolean, val msLeft: Int, val target: Int, val highest: Int, val actual: Int)
+
 class AppInfo(val minor: Int, val major: Int, val board: Int, val protocol: Int) {
     val boardName: String get() = if (board == 1) "5.2C" else "5.2"
 }
@@ -65,6 +68,8 @@ class DeviceState(
     val fahrenheit: Boolean get() = flags and 16 != 0
     /** the iron rests in its stand right now (firmware protocol 6 and later; false when the holder sensor is off) */
     val inStand: Boolean get() = flags and 32 != 0
+    /** the station is in ramp mode (firmware protocol 7) */
+    val rampMode: Boolean get() = flags and 64 != 0
 
     /** The station is in its menu or another screen where remote changes should wait. */
     val inMenu: Boolean get() = mode in 3..7 || mode in 9..12
@@ -677,6 +682,40 @@ class DeviceLink(private val ctx: Context) {
         return true
     }
 
+    // ---- ramp mode (firmware protocol 7) ----
+
+    /** The 8 ramp parameters: idle C, peak C, rate C/s, dwell 0.1 s, lockout s, idle time-out min, contact duty jump %, contact dip 0.5 C. */
+    fun getRampPars(): IntArray? {
+        val r = send(byteArrayOf(CMD_RAMP_GET), 1000) ?: return null
+        if (r.u(0) != 0) return null
+        return IntArray(8) { r.u16(1 + it * 2) }
+    }
+
+    /** 0 done, 1 bad key, 2 out of range, 3 a ramp is running, null no answer. */
+    fun setRampPars(v: IntArray): Int? {
+        val b = ByteArray(3 + 16)
+        b[0] = CMD_RAMP_SET
+        b[1] = 0x5A
+        b[2] = 0xA5.toByte()
+        for (i in 0 until 8) {
+            b[3 + i * 2] = (v[i] and 255).toByte()
+            b[4 + i * 2] = ((v[i] shr 8) and 255).toByte()
+        }
+        return send(b, 3000)?.u(0)
+    }
+
+    /** cmd 0 leave, 1 enter, 2 trigger, 3 abort. Returns Pair(status 0 done / 1 not possible / 3 station in menu, state). */
+    fun rampControl(cmd: Int): Pair<Int, Int>? {
+        val r = send(byteArrayOf(CMD_RAMP_CONTROL, cmd.toByte()), 1500) ?: return null
+        AppLog.info("Ramp control " + cmd + " -> status " + r.u(0) + ", state " + r.u(1))
+        return Pair(r.u(0), r.u(1))
+    }
+
+    fun rampStatus(): RampStatus? {
+        val r = send(byteArrayOf(CMD_RAMP_STATUS), 1000) ?: return null
+        return RampStatus(r.u(0), r.u(1) != 0, r.u16(2), r.u16(4), r.u16(6), r.u16(8))
+    }
+
     fun restartDevice() {
         AppLog.info("Restart station")
         send(byteArrayOf(CMD_RESTART, 0x5A, 0xA5.toByte()), 0)
@@ -698,6 +737,10 @@ class DeviceLink(private val ctx: Context) {
         const val CMD_SET_NAME: Byte = 0x43
         const val CMD_PID_SLOT_READ: Byte = 0x44
         const val CMD_PID_SLOT_WRITE: Byte = 0x45
+        const val CMD_RAMP_GET: Byte = 0x50
+        const val CMD_RAMP_SET: Byte = 0x51
+        const val CMD_RAMP_CONTROL: Byte = 0x52
+        const val CMD_RAMP_STATUS: Byte = 0x53
         const val PID_SLOTS = 8
         const val PID_SLOT_LEN = 12
         const val CMD_PRESET: Byte = 0x12
