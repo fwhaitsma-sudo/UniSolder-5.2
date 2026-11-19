@@ -147,6 +147,8 @@ class ProfilesPage(private val act: Activity, private val link: DeviceLink, priv
     private var busy = false
     private var ticks = 0
     private var runNote = ""
+    private var answered = -1
+    private var sentCount = 0
 
     val running: Boolean get() = run != null
     val runName: String? get() = run?.name
@@ -498,6 +500,8 @@ class ProfilesPage(private val act: Activity, private val link: DeviceLink, priv
         ticks = 0
         busy = false
         runNote = ""
+        answered = -1
+        sentCount = 0
         act.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         AppLog.info("Profile started: " + p.name)
         onRunChanged(p.name)
@@ -566,6 +570,8 @@ class ProfilesPage(private val act: Activity, private val link: DeviceLink, priv
                 } else {
                     fails = 0
                     lastSent = t
+                    answered = r
+                    sentCount++
                 }
             }
         }
