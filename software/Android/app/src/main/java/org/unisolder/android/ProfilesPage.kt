@@ -616,7 +616,8 @@ class ProfilesPage(private val act: Activity, private val link: DeviceLink, priv
         }
         val a = actual
         runText.text = "Step " + (stepIndex + 1) + " of " + p.steps.size + ": " + ph + "\nSet " + Math.round(setpoint) + " °C" +
-                (if (a != null) ", measured " + Math.round(a) + " °C" else "")
+                (if (a != null) ", measured " + Math.round(a) + " °C" else "") +
+                "\nSent " + sentCount + " change(s), the station answered " + (if (answered >= 0) answered.toString() + " °C" else "nothing yet")
     }
 
     /** measured tip temperature from the live data */
