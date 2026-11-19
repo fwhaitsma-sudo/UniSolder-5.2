@@ -18,7 +18,7 @@ enum { RS_OFF = 0, RS_IDLE, RS_RAMP, RS_PEAK, RS_COOL, RS_LOCK };
 
 //parameters: idle C, peak C, ramp rate C/s, dwell 0.1 s, lockout s, idle time-out min, contact duty jump % (step 2), contact dip 0.5 C (step 2)
 static UINT16 RampP[RAMP_NPAR];
-static const UINT16 RampDef[RAMP_NPAR] = {155, 275, 45, 11, 12, 10, 12, 5};
+static const UINT16 RampDef[RAMP_NPAR] = {165, 275, 45, 11, 12, 10, 12, 5};
 static const UINT16 RampMin[RAMP_NPAR] = {100, 110,   5,   0,  0,  1,  3,  2};
 static const UINT16 RampMax[RAMP_NPAR] = {340, 350, 100, 100, 60, 60, 40, 20};
 
@@ -148,8 +148,9 @@ static int RampTick(int actual, int inStand, int fault, int menuOpen, int activi
                 BeepTicks = 12;
                 return 0;
             }
+            //ready: at the idle temperature, or up to 10 C above it (the tip cools slowly; a contact is detected from the drop)
             c = actual - (int)RampP[0];
-            if(c >= -5 && c <= 5){ if(RampOk < 1000) RampOk++; } else RampOk = 0;
+            if(c >= -5 && c <= 10){ if(RampOk < 1000) RampOk++; } else RampOk = 0;
             break;
 
         case RS_RAMP:
@@ -163,8 +164,10 @@ static int RampTick(int actual, int inStand, int fault, int menuOpen, int activi
             nr = (((int)RampP[1] - (int)RampP[0]) * 50) / (int)RampP[2];     //ticks the ramp takes
             if(RampN < nr) tgt = (int)RampP[0] + (RampN * (int)RampP[2]) / 50;
             else tgt = RampP[1];
-            //the dwell starts when the tip is at the peak, or at the latest 1.5 s after the ramp should have ended
-            if(RampN >= nr && (actual >= (int)RampP[1] - 3 || RampN >= nr + 75)){
+            //the dwell starts when the target has reached the peak and the tip (unfiltered reading) is within 5 C of it,
+            //or at the latest 1.5 s after the ramp should have ended
+            c = (PIDVars[0].CTemp[0] + 1) >> 1;
+            if(RampN >= nr && (c >= (int)RampP[1] - 5 || RampN >= nr + 75)){
                 RampSt = RS_PEAK;
                 RampN = 0;
             }
@@ -188,7 +191,7 @@ static int RampTick(int actual, int inStand, int fault, int menuOpen, int activi
         case RS_COOL:
             tgt = RampP[0];
             RampN++;
-            if(actual <= (int)RampP[0] + 5 || RampN >= 500){ //cooled, or 10 s at most
+            if(actual <= (int)RampP[0] + 10 || RampN >= 500){ //cooled, or 10 s at most
                 RampSt = RS_LOCK;
                 RampN = 0;
             }
@@ -219,7 +222,7 @@ static void RampHeader(char * o){
     int i, k = 0;
     char num[3];
     switch(RampSt){
-        case RS_IDLE: s = (RampOk >= 25) ? "READY" : "HEATING"; break;
+        case RS_IDLE: s = (RampOk >= 25) ? "READY" : ((RampActualNow > (int)RampP[0]) ? "COOLING" : "HEATING"); break;
         case RS_RAMP: s = "RAMPING"; break;
         case RS_PEAK: s = "PEAK"; break;
         case RS_COOL: s = "COOLING"; break;

@@ -136,7 +136,7 @@ class RampPage(private val act: Activity, private val link: DeviceLink, private 
         head.setPadding(0, dp(20), 0, dp(4))
         col.addView(head)
 
-        addField(col, "Idle temperature (°C)", 0, "100-340. Held until the ramp starts, also while the iron is in its stand.")
+        addField(col, "Idle temperature (°C)", 0, "100-340, default 165 (below the melting point of Sn62 solder, 179). Held until the ramp starts, also while the iron is in its stand. Ready: up to 10 above it.")
         addField(col, "Peak temperature (°C)", 1, "At least 10 above idle, 350 at most.")
         addField(col, "Ramp rate (°C per second)", 2, "5-100. The tip cannot always follow a high rate: check the highest temperature below.")
         addField(col, "Dwell at the peak (seconds)", 3, "0-10, one decimal.", decimal = true)
@@ -270,7 +270,7 @@ class RampPage(private val act: Activity, private val link: DeviceLink, private 
         refreshButtons()
         val name = when (s.state) {
             0 -> "Off (normal station)"
-            1 -> if (s.ready) "Ready" else "Heating to the idle temperature"
+            1 -> if (s.ready) "Ready" else if (s.actual > pars[0]) "Cooling to the idle temperature" else "Heating to the idle temperature"
             2 -> "Ramping"
             3 -> "Peak"
             4 -> "Cooling down"
