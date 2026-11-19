@@ -30,7 +30,9 @@ class Profile(
     /** the hold time starts when the tip has reached the step temperature, not when the ramp ends */
     val waitForTemp: Boolean = true,
     /** at the end, set the temperature that was set when the profile started */
-    val returnToStart: Boolean = true
+    val returnToStart: Boolean = true,
+    /** temperature to go to (and wait for) before step 1; 0 = start from the temperature that is set now */
+    val startTemp: Int = 0
 ) {
     fun totalSeconds(): Int = steps.sumOf { it.ramp + it.hold }
 
@@ -39,6 +41,7 @@ class Profile(
         o.put("name", name)
         o.put("wait", waitForTemp)
         o.put("return", returnToStart)
+        o.put("start", startTemp)
         val a = JSONArray()
         for (s in steps) a.put(JSONObject().put("t", s.temp).put("r", s.ramp).put("h", s.hold))
         o.put("steps", a)
@@ -53,7 +56,7 @@ class Profile(
                 val s = a.getJSONObject(i)
                 steps.add(ProfileStep(s.getInt("t"), s.getInt("r"), s.getInt("h")))
             }
-            return Profile(o.getString("name"), steps, o.optBoolean("wait", true), o.optBoolean("return", true))
+            return Profile(o.getString("name"), steps, o.optBoolean("wait", true), o.optBoolean("return", true), o.optInt("start", 0))
         }
     }
 }
@@ -69,8 +72,11 @@ class ProfilePreview(ctx: android.content.Context) : View(ctx) {
     }
     private val grid = android.graphics.Paint().apply { color = 0x33888888; strokeWidth = 1f }
 
-    fun set(s: List<ProfileStep>) {
+    private var start = 0
+
+    fun set(s: List<ProfileStep>, startTemp: Int = 0) {
         steps = s
+        start = startTemp
         invalidate()
     }
 
@@ -86,7 +92,7 @@ class ProfilePreview(ctx: android.content.Context) : View(ctx) {
         val total = steps.sumOf { it.ramp + it.hold }
         c.drawLine(left, bottom, right, bottom, grid)
         c.drawLine(left, top, right, top, grid)
-        val tMin = 100f
+        val tMin = if (start in 100..449) minOf(100f, start.toFloat()) else 100f
         val tMax = maxOf(150f, (steps.maxOfOrNull { it.temp } ?: 150).toFloat())
         c.drawText(tMax.toInt().toString(), 2f, top + text.textSize * 0.8f, text)
         c.drawText("100", 2f, bottom, text)
@@ -98,7 +104,7 @@ class ProfilePreview(ctx: android.content.Context) : View(ctx) {
         fun y(t: Float) = bottom - (bottom - top) * (t - tMin) / (tMax - tMin)
         val path = android.graphics.Path()
         var sec = 0f
-        var prev = tMin    // step 1 ramps from the temperature that is set when the profile starts: drawn from the bottom
+        var prev = if (start > 0) start.toFloat() else tMin    // step 1 ramps from the temperature that is set when the profile starts: drawn from the bottom
         path.moveTo(x(0f), y(prev))
         for (s in steps) {
             sec += s.ramp
@@ -132,7 +138,7 @@ class ProfilesPage(private val act: Activity, private val link: DeviceLink, priv
     private var editing = false
 
     // ---- run state
-    private enum class Phase { RAMP, WAIT, HOLD }
+    private enum class Phase { PREP, RAMP, WAIT, HOLD }
 
     private var run: Profile? = null
     private var stepIndex = 0
@@ -279,7 +285,7 @@ class ProfilesPage(private val act: Activity, private val link: DeviceLink, priv
             n.setTypeface(null, android.graphics.Typeface.BOLD)
             c.addView(n)
             val d = TextView(act)
-            d.text = p.steps.joinToString("  →  ") { it.temp.toString() + "°" } + "\n" + p.steps.size + " step(s), " + fmtTime(p.totalSeconds()) + " without waiting"
+            d.text = (if (p.startTemp > 0) p.startTemp.toString() + "° start  →  " else "") + p.steps.joinToString("  →  ") { it.temp.toString() + "°" } + "\n" + p.steps.size + " step(s), " + fmtTime(p.totalSeconds()) + " without waiting"
             d.textSize = 13f
             c.addView(d)
             val row = LinearLayout(act)
@@ -330,6 +336,12 @@ class ProfilesPage(private val act: Activity, private val link: DeviceLink, priv
         name.setSingleLine(true)
         name.setText(p?.name ?: "")
         c.addView(name)
+        val startEdit = EditText(act)
+        startEdit.inputType = InputType.TYPE_CLASS_NUMBER
+        startEdit.hint = "Start temperature °C (empty = the temperature set now)"
+        startEdit.setSingleLine(true)
+        if (p != null && p.startTemp > 0) startEdit.setText(p.startTemp.toString())
+        c.addView(startEdit)
         val wait = CheckBox(act)
         wait.text = "Hold time starts when the temperature is reached"
         wait.isChecked = p?.waitForTemp ?: true
@@ -353,13 +365,14 @@ class ProfilesPage(private val act: Activity, private val link: DeviceLink, priv
                 val t = r.temp.text.toString().toIntOrNull() ?: continue
                 st.add(ProfileStep(t.coerceIn(100, 450), (r.ramp.text.toString().toIntOrNull() ?: 0).coerceIn(0, 3600), (r.hold.text.toString().toIntOrNull() ?: 0).coerceIn(0, 3600)))
             }
-            preview.set(st)
+            preview.set(st, startEdit.text.toString().toIntOrNull() ?: 0)
         }
         val watcher = object : android.text.TextWatcher {
             override fun afterTextChanged(s: android.text.Editable?) = updatePreview()
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
         }
+        startEdit.addTextChangedListener(watcher)
         val list = LinearLayout(act)
         list.orientation = LinearLayout.VERTICAL
         sc.addView(list)
@@ -389,7 +402,7 @@ class ProfilesPage(private val act: Activity, private val link: DeviceLink, priv
         updatePreview()
 
         val pn = TextView(act)
-        pn.text = "Step 1 ramps from the temperature that is set when you press Start."
+        pn.text = "Without a start temperature, step 1 ramps from the temperature that is set when you press Start."
         pn.textSize = 11f
         sc.addView(preview)
         sc.addView(pn)
@@ -421,7 +434,8 @@ class ProfilesPage(private val act: Activity, private val link: DeviceLink, priv
                 nm.isEmpty() -> Toast.makeText(act, "Give the profile a name.", Toast.LENGTH_SHORT).show()
                 steps.isEmpty() -> Toast.makeText(act, "Add at least one step with a temperature.", Toast.LENGTH_SHORT).show()
                 else -> {
-                    val np = Profile(nm, steps, wait.isChecked, ret.isChecked)
+                    val st0 = (startEdit.text.toString().toIntOrNull() ?: 0).let { if (it <= 0) 0 else it.coerceIn(100, 450) }
+                    val np = Profile(nm, steps, wait.isChecked, ret.isChecked, st0)
                     if (index >= 0) profiles[index] = np else profiles.add(np)
                     save()
                     showList()
@@ -492,9 +506,9 @@ class ProfilesPage(private val act: Activity, private val link: DeviceLink, priv
     private fun begin(p: Profile, currentSet: Int) {
         run = p
         stepIndex = 0
-        phase = Phase.RAMP
+        phase = if (p.startTemp > 0) Phase.PREP else Phase.RAMP
         phaseStart = System.currentTimeMillis()
-        fromTemp = currentSet.toFloat()
+        fromTemp = if (p.startTemp > 0) p.startTemp.toFloat() else currentSet.toFloat()
         startSet = currentSet
         setpoint = fromTemp
         lastSent = -1
@@ -525,6 +539,14 @@ class ProfilesPage(private val act: Activity, private val link: DeviceLink, priv
         val elapsed = (now - phaseStart) / 1000f
         ticks++
         when (phase) {
+            Phase.PREP -> {
+                setpoint = p.startTemp.toFloat()
+                val a = actual
+                if (a == null || Math.abs(a - p.startTemp) <= 5f) {
+                    phase = Phase.RAMP
+                    phaseStart = now
+                }
+            }
             Phase.RAMP -> {
                 setpoint = if (st.ramp <= 0) st.temp.toFloat() else fromTemp + (st.temp - fromTemp) * minOf(1f, elapsed / st.ramp)
                 if (elapsed >= st.ramp) {
@@ -617,12 +639,13 @@ class ProfilesPage(private val act: Activity, private val link: DeviceLink, priv
         val p = run ?: return
         val st = p.steps[stepIndex]
         val ph = when (phase) {
+            Phase.PREP -> "Going to the start temperature " + p.startTemp + " °C"
             Phase.RAMP -> "Ramp to " + st.temp + " °C"
             Phase.WAIT -> "Waiting for " + st.temp + " °C"
             Phase.HOLD -> "Hold " + st.temp + " °C"
         }
         val a = actual
-        runText.text = "Step " + (stepIndex + 1) + " of " + p.steps.size + ": " + ph + "\nSet " + Math.round(setpoint) + " °C" +
+        runText.text = (if (phase == Phase.PREP) "" else "Step " + (stepIndex + 1) + " of " + p.steps.size + ": ") + ph + "\nSet " + Math.round(setpoint) + " °C" +
                 (if (a != null) ", measured " + Math.round(a) + " °C" else "") +
                 "\nSent " + sentCount + " change(s), the station answered " + (if (answered >= 0) answered.toString() + " °C" else "nothing yet") +
                 (if (stSet >= 0) "\nStation: set " + stSet + " °C, regulating to " + (if (stTarget == 0) "heater off" else stTarget.toString() + " °C") else "")
