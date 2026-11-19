@@ -32,9 +32,11 @@ class Profile(
     /** at the end, set the temperature that was set when the profile started */
     val returnToStart: Boolean = true,
     /** temperature to go to (and wait for) before step 1; 0 = start from the temperature that is set now */
-    val startTemp: Int = 0
+    val startTemp: Int = 0,
+    /** seconds to wait at the start temperature before step 1 */
+    val startHold: Int = 0
 ) {
-    fun totalSeconds(): Int = steps.sumOf { it.ramp + it.hold }
+    fun totalSeconds(): Int = (if (startTemp > 0) startHold else 0) + steps.sumOf { it.ramp + it.hold }
 
     fun toJson(): JSONObject {
         val o = JSONObject()
@@ -42,6 +44,7 @@ class Profile(
         o.put("wait", waitForTemp)
         o.put("return", returnToStart)
         o.put("start", startTemp)
+        o.put("starthold", startHold)
         val a = JSONArray()
         for (s in steps) a.put(JSONObject().put("t", s.temp).put("r", s.ramp).put("h", s.hold))
         o.put("steps", a)
@@ -56,7 +59,7 @@ class Profile(
                 val s = a.getJSONObject(i)
                 steps.add(ProfileStep(s.getInt("t"), s.getInt("r"), s.getInt("h")))
             }
-            return Profile(o.getString("name"), steps, o.optBoolean("wait", true), o.optBoolean("return", true), o.optInt("start", 0))
+            return Profile(o.getString("name"), steps, o.optBoolean("wait", true), o.optBoolean("return", true), o.optInt("start", 0), o.optInt("starthold", 0))
         }
     }
 }
@@ -74,9 +77,12 @@ class ProfilePreview(ctx: android.content.Context) : View(ctx) {
 
     private var start = 0
 
-    fun set(s: List<ProfileStep>, startTemp: Int = 0) {
+    private var startHold = 0
+
+    fun set(s: List<ProfileStep>, startTemp: Int = 0, hold: Int = 0) {
         steps = s
         start = startTemp
+        startHold = if (startTemp > 0) hold else 0
         invalidate()
     }
 
@@ -89,7 +95,7 @@ class ProfilePreview(ctx: android.content.Context) : View(ctx) {
         val right = width - 6f
         val top = 8f
         val bottom = height - text.textSize - 10f
-        val total = steps.sumOf { it.ramp + it.hold }
+        val total = startHold + steps.sumOf { it.ramp + it.hold }
         c.drawLine(left, bottom, right, bottom, grid)
         c.drawLine(left, top, right, top, grid)
         val tMin = if (start in 100..449) minOf(100f, start.toFloat()) else 100f
@@ -106,6 +112,10 @@ class ProfilePreview(ctx: android.content.Context) : View(ctx) {
         var sec = 0f
         var prev = if (start > 0) start.toFloat() else tMin    // step 1 ramps from the temperature that is set when the profile starts: drawn from the bottom
         path.moveTo(x(0f), y(prev))
+        if (startHold > 0) {
+            sec += startHold
+            path.lineTo(x(sec), y(prev))
+        }
         for (s in steps) {
             sec += s.ramp
             path.lineTo(x(sec), y(s.temp.toFloat()))
@@ -140,11 +150,12 @@ class ProfilesPage(private val act: Activity, private val link: DeviceLink, priv
     private var editing = false
 
     // ---- run state
-    private enum class Phase { PREP, RAMP, WAIT, HOLD }
+    private enum class Phase { PREP, PREPHOLD, RAMP, WAIT, HOLD }
 
     private var run: Profile? = null
     private var stepIndex = 0
     private var phase = Phase.RAMP
+    private var armed = false      // true once the iron has been out of its stand: putting it back then stops the profile
     private var phaseStart = 0L
     private var fromTemp = 0f
     private var startSet = 0
@@ -159,7 +170,6 @@ class ProfilesPage(private val act: Activity, private val link: DeviceLink, priv
     private var sentCount = 0
     private var stSet = -1
     private var inStand = false
-    private var pauseStart = 0L
     private var stTarget = -1
 
     val running: Boolean get() = run != null
@@ -267,7 +277,7 @@ class ProfilesPage(private val act: Activity, private val link: DeviceLink, priv
         header("Soldering profiles")
         val note = TextView(act)
         note.text = "A profile sets the station's temperature step by step. The app runs it, so keep the app open and connected (the screen stays on while it runs). " +
-                "If the connection is lost, the station stays at the last temperature. Temperatures are in °C."
+                "If the connection is lost, the station stays at the last temperature. Started with the iron in its stand, the profile goes to the start temperature and waits for you to pick the iron up; putting it back in the stand stops the profile (needs remote control v6). Temperatures are in °C."
         note.textSize = 12f
         note.setPadding(0, dp(8), 0, 0)
         col.addView(note)
@@ -346,6 +356,12 @@ class ProfilesPage(private val act: Activity, private val link: DeviceLink, priv
         startEdit.setSingleLine(true)
         if (p != null && p.startTemp > 0) startEdit.setText(p.startTemp.toString())
         c.addView(startEdit)
+        val startHoldEdit = EditText(act)
+        startHoldEdit.inputType = InputType.TYPE_CLASS_NUMBER
+        startHoldEdit.hint = "Wait at the start temperature (s)"
+        startHoldEdit.setSingleLine(true)
+        if (p != null && p.startHold > 0) startHoldEdit.setText(p.startHold.toString())
+        c.addView(startHoldEdit)
         val wait = CheckBox(act)
         wait.text = "Hold time starts when the temperature is reached"
         wait.isChecked = p?.waitForTemp ?: true
@@ -369,7 +385,7 @@ class ProfilesPage(private val act: Activity, private val link: DeviceLink, priv
                 val t = r.temp.text.toString().toIntOrNull() ?: continue
                 st.add(ProfileStep(t.coerceIn(100, 450), (r.ramp.text.toString().toIntOrNull() ?: 0).coerceIn(0, 3600), (r.hold.text.toString().toIntOrNull() ?: 0).coerceIn(0, 3600)))
             }
-            preview.set(st, startEdit.text.toString().toIntOrNull() ?: 0)
+            preview.set(st, startEdit.text.toString().toIntOrNull() ?: 0, startHoldEdit.text.toString().toIntOrNull() ?: 0)
         }
         val watcher = object : android.text.TextWatcher {
             override fun afterTextChanged(s: android.text.Editable?) = updatePreview()
@@ -377,6 +393,7 @@ class ProfilesPage(private val act: Activity, private val link: DeviceLink, priv
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
         }
         startEdit.addTextChangedListener(watcher)
+        startHoldEdit.addTextChangedListener(watcher)
         val list = LinearLayout(act)
         list.orientation = LinearLayout.VERTICAL
         sc.addView(list)
@@ -439,7 +456,8 @@ class ProfilesPage(private val act: Activity, private val link: DeviceLink, priv
                 steps.isEmpty() -> Toast.makeText(act, "Add at least one step with a temperature.", Toast.LENGTH_SHORT).show()
                 else -> {
                     val st0 = (startEdit.text.toString().toIntOrNull() ?: 0).let { if (it <= 0) 0 else it.coerceIn(100, 450) }
-                    val np = Profile(nm, steps, wait.isChecked, ret.isChecked, st0)
+                    val sh0 = if (st0 > 0) (startHoldEdit.text.toString().toIntOrNull() ?: 0).coerceIn(0, 3600) else 0
+                    val np = Profile(nm, steps, wait.isChecked, ret.isChecked, st0, sh0)
                     if (index >= 0) profiles[index] = np else profiles.add(np)
                     save()
                     showList()
@@ -525,7 +543,7 @@ class ProfilesPage(private val act: Activity, private val link: DeviceLink, priv
         runNote = ""
         answered = -1
         sentCount = 0
-        pauseStart = 0L
+        armed = !inStand
         act.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         AppLog.info("Profile started: " + p.name)
         onRunChanged(p.name)
@@ -547,20 +565,36 @@ class ProfilesPage(private val act: Activity, private val link: DeviceLink, priv
         val elapsed = (now - phaseStart) / 1000f
         ticks++
         if (ticks % 2 == 0 && !busy) checkMenu()
-        if (inStand) {   // the iron is in its stand: the profile waits (the station itself limits the heat to HOLDER T) until it is picked up
-            if (pauseStart == 0L) pauseStart = now
+        if (inStand) {
+            if (armed) {   // the iron went back into its stand during the profile
+                stopRun("The iron is back in its stand: the profile stopped.", false)
+                return
+            }
+            // started with the iron in its stand: go to the start temperature and wait there until the iron is picked up
+            setpoint = if (p.startTemp > 0) p.startTemp.toFloat() else setpoint
+            if (p.startTemp > 0) {
+                val tg = Math.round(setpoint)
+                if (tg != lastSent && !busy) send(tg)
+            }
             updateRunText()
             return
         }
-        if (pauseStart != 0L) {
-            phaseStart += now - pauseStart   // the time in the stand does not count
-            pauseStart = 0L
+        if (!armed) {
+            armed = true
+            phaseStart = now
         }
         when (phase) {
             Phase.PREP -> {
                 setpoint = p.startTemp.toFloat()
                 val a = actual
                 if (a == null || Math.abs(a - p.startTemp) <= 5f) {
+                    phase = if (p.startHold > 0) Phase.PREPHOLD else Phase.RAMP
+                    phaseStart = now
+                }
+            }
+            Phase.PREPHOLD -> {
+                setpoint = p.startTemp.toFloat()
+                if (elapsed >= p.startHold) {
                     phase = Phase.RAMP
                     phaseStart = now
                 }
@@ -658,12 +692,13 @@ class ProfilesPage(private val act: Activity, private val link: DeviceLink, priv
         val st = p.steps[stepIndex]
         val ph = when (phase) {
             Phase.PREP -> "Going to the start temperature " + p.startTemp + " °C"
+            Phase.PREPHOLD -> "Waiting at the start temperature, " + Math.max(0, p.startHold - ((System.currentTimeMillis() - phaseStart) / 1000).toInt()) + " s left"
             Phase.RAMP -> "Ramp to " + st.temp + " °C"
             Phase.WAIT -> "Waiting for " + st.temp + " °C"
             Phase.HOLD -> "Hold " + st.temp + " °C"
         }
         val a = actual
-        runText.text = (if (pauseStart != 0L) "Waiting: the iron is in its stand. The profile continues when you pick it up.\n" else "") + (if (phase == Phase.PREP) "" else "Step " + (stepIndex + 1) + " of " + p.steps.size + ": ") + ph + "\nSet " + Math.round(setpoint) + " °C" +
+        runText.text = (if (inStand && !armed) "Waiting: the iron is in its stand. The profile continues when you pick it up.\n" else "") + (if (phase == Phase.PREP || phase == Phase.PREPHOLD) "" else "Step " + (stepIndex + 1) + " of " + p.steps.size + ": ") + ph + "\nSet " + Math.round(setpoint) + " °C" +
                 (if (a != null) ", measured " + Math.round(a) + " °C" else "") +
                 "\nSent " + sentCount + " change(s), the station answered " + (if (answered >= 0) answered.toString() + " °C" else "nothing yet") +
                 (if (stSet >= 0) "\nStation: set " + stSet + " °C, regulating to " + (if (stTarget == 0) "heater off" else stTarget.toString() + " °C") else "")
