@@ -1,6 +1,6 @@
 # Ramp mode: design note (firmware, step 1 and 2)
 
-Status: step 1 written (2026-11-19), waiting for CI and hardware test. Branch `remote-control` only.
+Status: step 1 written and tested on hardware (3 tests, 2026-11-19); step 2 design updated with the cooling detector (2026-11-19). Branch `remote-control` only.
 
 Decisions by the user (2026-11-19): one ramp + one dwell in version 1; idle temperature applies in the stand; peak maximum 350 C is fine; **no power cap below the existing 130 W limit** (the power cap parameter and the PID.c change were dropped).
 Goal: a separate **ramp mode** in the station. Outside this mode the station behaves exactly as it does today.
@@ -70,16 +70,47 @@ Ramp target in integer math (C89, no FPU): `target = idle + (n * rate) / 50`, wi
 | idle time-out | min | 1..60 | 10 |
 | contact: duty jump | % | 3..40 | 12 (step 2) |
 | contact: temperature dip | 0.5 C | 2..20 | 5 (step 2) |
+| contact: cooling constant | 0.001/s | 5..50 | 16 (step 2, proposed, see 2.4 A) |
 
 The user decides the real values; the defaults above are the numbers from the review prompt. The peak limits for the polymer capacitor in the example are the user's responsibility (datasheet), not mine. Version 1 has one ramp and one dwell. A step table (preheat, soak, reflow, like the app's profiles) can follow later, the state machine is written so it can loop over steps.
 
 ### 2.4 Contact detection (step 2)
 Runs on the same 20 ms tick, reads `PIDVars[0]` (iron 0 only in v1; with a two-iron adapter the active iron).
+Two detectors, because the tip is in one of two situations when the user touches a pad:
+
+**A. Cooling detector (heater off, tip above its target).** This is the normal case between ramps: after a ramp the tip stays far above idle for 30-40 s (test 2 and 3), so the heater demand is 0 and there is no duty signal at all. The signal is how fast the tip cools.
+
+The raw cooling rate depends on how hot the tip is, so it is normalised by the temperature above the room (cold junction):
+`k = cooling rate / (T - T_room)` (unit 1/s). Free cooling gives a nearly constant k; contact with a pad roughly doubles it.
+
+Data from test 3 (`test_logs/ramp_test_3_contact.csv`, C245, 2026-11-19, two contacts confirmed by the user just before the manual trigger; T_room = actual - adc = 16.5 C):
+
+| Segment | Tip temperature | Cooling rate | k (1/s) |
+|---|---|---|---|
+| free, 0-6 s | ~205 C | 1.6 C/s | 0.008-0.009 |
+| free, 15-20.5 s | ~248 C | 2.4 C/s | 0.010-0.011 |
+| free, 33-37 s | ~253 C | 2.3 C/s | 0.009-0.011 |
+| **contact, 6-8.4 s** | ~197 C | 3.75 C/s | **0.021** |
+| **contact, 20.5-27 s** | ~225 C | 5.0 C/s | **0.022-0.025** |
+| heater just switched off, 12.5-15 s / 31-33 s | ~265 C | 5.6-6.6 C/s | ~0.023-0.027 (false!) |
+
+Proposed rule (thresholds to be confirmed in step 2a):
+1. **Armed** when: ramp mode, iron out of the stand, state IDLE or LOCKOUT, and `PIDDutyFull == 0` for at least **3 s**. The 3 s blanking hides the fast drop right after the heater switches off (heat spreading from the heater into the tip), which looks exactly like contact (last row of the table).
+2. **Rate**: ring buffer of 50 filtered temperatures (`TAvgP`, 0.5 C units, one per tick = 1 s). Rate = (mean of the oldest 25 - mean of the newest 25) per 0.5 s. Integer only, 200 bytes RAM. (A least-squares slope is better but not needed for a 2x difference.)
+3. **Room temperature**: `CJTemp` (0.5 C units). If there is no cold junction sensor (`CJTemp == -273*2`) use 25 C.
+4. **Contact** when `rate_per_s * 1000 >= k_threshold * (T - T_room)` for **25 ticks in a row (0.5 s)**. Default `k_threshold` = 16 (= 0.016/s, halfway between 0.011 and 0.021). Expected latency 1-1.5 s, about the same as the user's own reaction in test 3.
+5. **Ready limit**: the contact condition is evaluated all the time, but a ramp only starts when the tip is also at or below the ready limit (option B). Because k stays high as long as the tip touches the pad, a contact at 240 C (above a 230 C ready limit) starts the ramp as soon as the tip has cooled to 230 C, about 2 s later at 5 C/s. No latch needed.
+
+**B. Duty detector (heater regulating, tip at idle).** The original plan, for the case where the tip has cooled down to idle and the PID holds it there:
 1. **Settled**: out of the stand and |actual - idle| <= 1.5 C for 1.5 s.
 2. **Baseline**: exponential average of `PIDDutyFull` (shift 4, integer), only while settled.
-3. **Trigger** when settled and either: `PIDDutyFull - baseline` >= duty jump for 3 ticks in a row, or `idle - TAvgP` >= dip for 2 ticks in a row. Latency about 40-60 ms, set by the PID cycle and not by Bluetooth.
-4. Feeding solder wire also draws heat and will trigger. That is accepted for this mode; the lockout and the knob abort are the safeguards.
-5. **The numbers are not guessed**: step 2a is a recording of duty, filtered temperature and error at 20 ms during 10 real contacts (pad and ground plane), made with the existing recorder if its rate is high enough, otherwise with a small capture buffer in the firmware that the app reads back. The thresholds are chosen from that data.
+3. **Trigger** when settled and either: `PIDDutyFull - baseline` >= duty jump for 3 ticks in a row, or `idle - TAvgP` >= dip for 2 ticks in a row. Latency about 40-60 ms.
+
+Both detectors start the same RAMP state. Common points:
+- Feeding solder wire also draws heat and will trigger. That is accepted for this mode; the lockout and the knob abort are the safeguards.
+- **Things that may also raise k without real pad contact**, to be recorded in step 2a before the threshold is final: putting the iron in the stand (metal stand touching the tip; stand detection should block this anyway), wiping on a wet sponge or brass wool, waving the iron through the air, large copper area vs small pad. If wiping crosses the threshold, an extra arming condition is needed (for example: only after the iron was lifted from the stand, or within a window after a knob press).
+- **The numbers are not guessed**: step 2a records duty, filtered temperature, CJ temperature and computed k at 20 ms during about 10 real contacts per case (pad, ground plane, and the false cases above), with a small capture buffer in the firmware that the app reads back if the 5 Hz recorder is too slow. The thresholds are chosen from that data.
+- New parameter (10th): **contact: cooling constant**, unit 0.001/s, range 5..50, default 16. Changes the EEPROM format again (new marker; older formats still read), decided at step 2b.
 
 ### 2.5 No phone needed, no heartbeat
 The review prompt had a 5 s disconnect fail-safe because the phone ran the ramp. Here the station owns the state machine, so the phone is only an editor and viewer. A lost connection changes nothing; the station-side limits (time limits, abort, idle time-out) are the safety net.
