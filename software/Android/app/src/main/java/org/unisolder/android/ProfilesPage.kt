@@ -130,6 +130,8 @@ class ProfilesPage(private val act: Activity, private val link: DeviceLink, priv
     var onBack: () -> Unit = {}
     /** called when a run starts or ends (the Control tab shows it) */
     var onRunChanged: (String?) -> Unit = {}
+    /** firmware protocol of the connected station (the iron-in-stand flag needs 6) */
+    var protocol: () -> Int = { 0 }
 
     private val ui = Handler(Looper.getMainLooper())
     private val prefs = Prefs(act)
@@ -156,6 +158,8 @@ class ProfilesPage(private val act: Activity, private val link: DeviceLink, priv
     private var answered = -1
     private var sentCount = 0
     private var stSet = -1
+    private var inStand = false
+    private var pauseStart = 0L
     private var stTarget = -1
 
     val running: Boolean get() = run != null
@@ -497,7 +501,10 @@ class ProfilesPage(private val act: Activity, private val link: DeviceLink, priv
                 when {
                     s == null -> Toast.makeText(act, "No answer from the station.", Toast.LENGTH_SHORT).show()
                     s.inMenu -> Toast.makeText(act, "The station is in its menu. Leave the menu first.", Toast.LENGTH_LONG).show()
-                    else -> begin(p, s.set)
+                    else -> {
+                        inStand = protocol() >= 6 && s.inStand
+                        begin(p, s.set)
+                    }
                 }
             }
         }
@@ -518,6 +525,7 @@ class ProfilesPage(private val act: Activity, private val link: DeviceLink, priv
         runNote = ""
         answered = -1
         sentCount = 0
+        pauseStart = 0L
         act.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         AppLog.info("Profile started: " + p.name)
         onRunChanged(p.name)
@@ -538,6 +546,16 @@ class ProfilesPage(private val act: Activity, private val link: DeviceLink, priv
         val st = p.steps[stepIndex]
         val elapsed = (now - phaseStart) / 1000f
         ticks++
+        if (ticks % 2 == 0 && !busy) checkMenu()
+        if (inStand) {   // the iron is in its stand: the profile waits (the station itself limits the heat to HOLDER T) until it is picked up
+            if (pauseStart == 0L) pauseStart = now
+            updateRunText()
+            return
+        }
+        if (pauseStart != 0L) {
+            phaseStart += now - pauseStart   // the time in the stand does not count
+            pauseStart = 0L
+        }
         when (phase) {
             Phase.PREP -> {
                 setpoint = p.startTemp.toFloat()
@@ -578,7 +596,6 @@ class ProfilesPage(private val act: Activity, private val link: DeviceLink, priv
         }
         val target = Math.round(setpoint)
         if (target != lastSent && !busy) send(target)
-        if (ticks % 4 == 0 && !busy) checkMenu()
         updateRunText()
     }
 
@@ -610,6 +627,7 @@ class ProfilesPage(private val act: Activity, private val link: DeviceLink, priv
                 if (s != null) {
                     stSet = s.set
                     stTarget = s.target
+                    inStand = protocol() >= 6 && s.inStand
                     AppLog.info("Profile: sent " + lastSent + ", station set " + s.set + ", regulating to " + s.target + ", standby " + s.standby + ", mode " + s.mode)
                 }
                 if (run != null && s != null && s.inMenu) stopRun("The station went into its menu: the profile stopped.", false)
@@ -645,7 +663,7 @@ class ProfilesPage(private val act: Activity, private val link: DeviceLink, priv
             Phase.HOLD -> "Hold " + st.temp + " °C"
         }
         val a = actual
-        runText.text = (if (phase == Phase.PREP) "" else "Step " + (stepIndex + 1) + " of " + p.steps.size + ": ") + ph + "\nSet " + Math.round(setpoint) + " °C" +
+        runText.text = (if (pauseStart != 0L) "Waiting: the iron is in its stand. The profile continues when you pick it up.\n" else "") + (if (phase == Phase.PREP) "" else "Step " + (stepIndex + 1) + " of " + p.steps.size + ": ") + ph + "\nSet " + Math.round(setpoint) + " °C" +
                 (if (a != null) ", measured " + Math.round(a) + " °C" else "") +
                 "\nSent " + sentCount + " change(s), the station answered " + (if (answered >= 0) answered.toString() + " °C" else "nothing yet") +
                 (if (stSet >= 0) "\nStation: set " + stSet + " °C, regulating to " + (if (stTarget == 0) "heater off" else stTarget.toString() + " °C") else "")

@@ -197,6 +197,7 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
         profiles.view.visibility = View.GONE
         settings.onBack = { openSettings(false) }
         profiles.onBack = { profiles.view.visibility = View.GONE }
+        profiles.protocol = { info?.protocol ?: 0 }
         profiles.onRunChanged = { n -> profilesButton.text = if (n == null) "Soldering profiles" else "Soldering profiles (running: " + n + ")" }
         view = frame
         enableControls(false)

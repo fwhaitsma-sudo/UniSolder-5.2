@@ -63,6 +63,8 @@ class DeviceState(
     val twoIrons: Boolean get() = flags and 4 != 0
     val onStand: Boolean get() = flags and 8 != 0
     val fahrenheit: Boolean get() = flags and 16 != 0
+    /** the iron rests in its stand right now (firmware protocol 6 and later; false when the holder sensor is off) */
+    val inStand: Boolean get() = flags and 32 != 0
 
     /** The station is in its menu or another screen where remote changes should wait. */
     val inMenu: Boolean get() = mode in 3..7 || mode in 9..12

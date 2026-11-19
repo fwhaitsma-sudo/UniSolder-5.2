@@ -363,7 +363,7 @@ void RemoteGetState(RemoteState * s){
     s->Holder = ParFine(3);
     s->Sleep = ParFine(4);
     s->Mode = (unsigned char)CMode;
-    s->Flags = (ManualSleep ? 1 : 0) | ((CMode == STANDBY) ? 2 : 0) | (IronPairActive() ? 4 : 0) | (mainFlags.HolderPresent ? 8 : 0) | (pars.Deg ? 16 : 0);
+    s->Flags = (ManualSleep ? 1 : 0) | ((CMode == STANDBY) ? 2 : 0) | (IronPairActive() ? 4 : 0) | (mainFlags.HolderPresent ? 8 : 0) | (pars.Deg ? 16 : 0) | ((!FNAP && pars.Holder) ? 32 : 0);
     s->ActIron = pars.ActIron;
 }
 
