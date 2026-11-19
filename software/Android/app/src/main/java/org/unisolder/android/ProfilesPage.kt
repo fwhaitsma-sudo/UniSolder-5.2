@@ -149,6 +149,8 @@ class ProfilesPage(private val act: Activity, private val link: DeviceLink, priv
     private var runNote = ""
     private var answered = -1
     private var sentCount = 0
+    private var stSet = -1
+    private var stTarget = -1
 
     val running: Boolean get() = run != null
     val runName: String? get() = run?.name
@@ -554,7 +556,7 @@ class ProfilesPage(private val act: Activity, private val link: DeviceLink, priv
         }
         val target = Math.round(setpoint)
         if (target != lastSent && !busy) send(target)
-        if (ticks % 6 == 0 && !busy) checkMenu()
+        if (ticks % 4 == 0 && !busy) checkMenu()
         updateRunText()
     }
 
@@ -583,6 +585,11 @@ class ProfilesPage(private val act: Activity, private val link: DeviceLink, priv
             val s = link.getState()
             ui.post {
                 busy = false
+                if (s != null) {
+                    stSet = s.set
+                    stTarget = s.target
+                    AppLog.info("Profile: sent " + lastSent + ", station set " + s.set + ", regulating to " + s.target + ", standby " + s.standby + ", mode " + s.mode)
+                }
                 if (run != null && s != null && s.inMenu) stopRun("The station went into its menu: the profile stopped.", false)
             }
         }
@@ -617,7 +624,8 @@ class ProfilesPage(private val act: Activity, private val link: DeviceLink, priv
         val a = actual
         runText.text = "Step " + (stepIndex + 1) + " of " + p.steps.size + ": " + ph + "\nSet " + Math.round(setpoint) + " °C" +
                 (if (a != null) ", measured " + Math.round(a) + " °C" else "") +
-                "\nSent " + sentCount + " change(s), the station answered " + (if (answered >= 0) answered.toString() + " °C" else "nothing yet")
+                "\nSent " + sentCount + " change(s), the station answered " + (if (answered >= 0) answered.toString() + " °C" else "nothing yet") +
+                (if (stSet >= 0) "\nStation: set " + stSet + " °C, regulating to " + (if (stTarget == 0) "heater off" else stTarget.toString() + " °C") else "")
     }
 
     /** measured tip temperature from the live data */
