@@ -22,7 +22,7 @@ const char * StrOffOnAuto[] = {"OFF ", "ON  ", "AUTO"};
 const char * StrMenuUp[]    = {"KEY+", "KEY-"};
 
 //ROTATION (12), BUTTONS (10) and MENU DOWN (14) are no longer in the menu: their values stay as they were set
-const unsigned char MenuOrder[] = {32,18,19,0,1,2,22,3,4,5,6,7,11,13,8,9,28,27,16,17,30,31,29};
+const unsigned char MenuOrder[] = {33,32,18,19,0,1,2,22,3,4,5,6,7,11,13,8,9,28,27,16,17,30,31,29};
 
 char UserName[NAME_LEN + 1];
 char UserPin[PIN_LEN + 1];
@@ -65,6 +65,7 @@ const t_ParDef ParDef[] = {
     {"      NAME ",   0,       0,       0, 0,            0, 0,            0}, //30 name shown at power-up
     {"   PINCODE ",   0,       0,       0, 0,            0, 0,            0}, //31 menu pincode
     {" TIP PRESET",   0,       0,       0, 0,            0, 0,            0}, //32 instruments and tips
+    {" RAMP MODE ",   0,       0,       0, 0,            0, 0,            0}, //33 ramp mode on/off (action, not saved)
 };
 
 //All values are right-aligned to the right edge of the display (the col argument is not used).

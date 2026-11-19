@@ -355,6 +355,8 @@ int RemoteSetParam(int p, unsigned int v){
     return 0;
 }
 
+#include "ramp_core.h"
+
 void RemoteGetState(RemoteState * s){
     int i;
     s->Set = TTemp;
@@ -363,7 +365,7 @@ void RemoteGetState(RemoteState * s){
     s->Holder = ParFine(3);
     s->Sleep = ParFine(4);
     s->Mode = (unsigned char)CMode;
-    s->Flags = (ManualSleep ? 1 : 0) | ((CMode == STANDBY) ? 2 : 0) | (IronPairActive() ? 4 : 0) | (mainFlags.HolderPresent ? 8 : 0) | (pars.Deg ? 16 : 0) | ((!FNAP && pars.Holder) ? 32 : 0);
+    s->Flags = (ManualSleep ? 1 : 0) | ((CMode == STANDBY) ? 2 : 0) | (IronPairActive() ? 4 : 0) | (mainFlags.HolderPresent ? 8 : 0) | (pars.Deg ? 16 : 0) | ((!FNAP && pars.Holder) ? 32 : 0) | (RampSt ? 64 : 0);
     s->ActIron = pars.ActIron;
 }
 
@@ -391,6 +393,10 @@ void OLEDTasks(int powerLost){
                         break;
                     }
                     if(IgnoreKey && !BTicks[1].o && !BTicks[1].n) IgnoreKey = 0;
+                    if(RampSt){ //ramp mode: the knob does not change the temperature
+                        EncDiff = 0;
+                        DblTicks = 0;
+                    }
                     if(DblTicks){ //two-iron adapter: waiting to see if a second press follows
                         DblTicks--;
                         if(!BTicks[1].o && BTicks[1].n){ //second press: switch iron
@@ -407,7 +413,10 @@ void OLEDTasks(int powerLost){
                         CMode = SET_TEMPERATURE;
                     }
                     if(!IgnoreKey && BTicks[1].o && BTicks[1].o < MENU_HOLD_TICKS && BTicks[1].n == 0){
-                        if(IronPairActive()){
+                        if(RampSt){
+                            RampPressed = 1;    //ramp mode: a short press starts the ramp (or aborts a running one)
+                        }
+                        else if(IronPairActive()){
                             DblTicks = DBL_PRESS_TICKS; //decide after the double-press window
                         }
                         else{
@@ -577,6 +586,16 @@ void OLEDTasks(int powerLost){
                                         PinPos = 0;
                                         CMode=PIN_EDIT;
                                     }
+                                    break;
+                                case 33: //ramp mode on/off (never saved: power-up is always the classic station)
+                                    if(RampSt){
+                                        RampLeaveMode();
+                                        BeepTicks = 2;
+                                    }
+                                    else if(RampEnter()){
+                                        BeepTicks = 12;     //not possible (two-iron adapter, no instrument)
+                                    }
+                                    CMode = DEFAULT_MENU;
                                     break;
                                 case 30: //name shown at power-up
                                     {
@@ -869,7 +888,14 @@ void OLEDTasks(int powerLost){
     }
 
     if(OLEDFlags.f.Header){
-        OLEDPrint68(0, 0, (const char *)&IronPars.Name, 21);
+        if(RampSt){
+            char hb[22];
+            RampHeader(hb);
+            OLEDPrint68(0, 0, hb, 21);
+        }
+        else{
+            OLEDPrint68(0, 0, (const char *)&IronPars.Name, 21);
+        }
     }
     if(OLEDFlags.f.Footer){
         UINT8 b;
@@ -1267,6 +1293,7 @@ void MenuTasks(int powerLost){
                 if(CMode == STANDBY){
                     ModeTicks = 255;
                     CTTemp = 0;
+                    if(RampSt) RampLeaveMode();     //manual sleep ends ramp mode
                 }
                 else{
                     //the sleep timers stop in the menu, so leaving it returns to the state from before
@@ -1323,6 +1350,13 @@ void MenuTasks(int powerLost){
                     }
                     if(ManualSleep || WakeHold || WakeLong) i = 0; //sleep: heater off; a wake press heats only if released before MENU_HOLD_TICKS
                     if(pars.STBTime && (CMinutes >= pars.STBTime)) i = 0;
+                    if(RampSt){     //ramp mode: the ramp logic owns the target (sleep, stand-by and HOLDER T are not used)
+                        int menuOpen = !(CMode == DEFAULT_MENU || CMode == SET_TEMPERATURE || CMode == RESET_TEMPERATURE);
+                        int fault = mainFlags.TipChange || PIDVars[0].NoHeater || PIDVars[0].NoSensor || PIDVars[0].ShortCircuit ||
+                                    IronPars.Config[0].SensorConfig.Type == SENSOR_NONE;
+                        int rt = RampTick(DispTemp >> 4, (!FNAP && pars.Holder) ? 1 : 0, fault, menuOpen, userInput);
+                        if(RampSt) i = rt;
+                    }
                     CTTemp = i;
 
                     if(TempBeep && (CTTemp == TTemp) && ((CTTemp >> 1) == (DispTemp >> 5))){

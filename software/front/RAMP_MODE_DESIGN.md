@@ -1,6 +1,8 @@
 # Ramp mode: design note (firmware, step 1 and 2)
 
-Status: DRAFT for approval (2026-11-19). Branch `remote-control` only. Nothing is built yet.
+Status: step 1 written (2026-11-19), waiting for CI and hardware test. Branch `remote-control` only.
+
+Decisions by the user (2026-11-19): one ramp + one dwell in version 1; idle temperature applies in the stand; peak maximum 350 C is fine; **no power cap below the existing 130 W limit** (the power cap parameter and the PID.c change were dropped).
 Goal: a separate **ramp mode** in the station. Outside this mode the station behaves exactly as it does today.
 Inside it the station runs a heating ramp by itself (idle, ramp, dwell, cool down, lockout) and later starts it by itself when the tip touches a pad.
 
@@ -64,7 +66,6 @@ Ramp target in integer math (C89, no FPU): `target = idle + (n * rate) / 50`, wi
 | peak temperature | C | idle+10..350 (hard maximum 350, also below MAXTEMP) | 275 |
 | ramp rate | C/s | 5..100 | 45 |
 | dwell | 0.1 s | 0..100 | 11 |
-| power cap | % | 20..100 | 100 (= off; tune on hardware) |
 | lockout | s | 0..60 | 12 |
 | idle time-out | min | 1..60 | 10 |
 | contact: duty jump | % | 3..40 | 12 (step 2) |
@@ -87,10 +88,10 @@ The review prompt had a 5 s disconnect fail-safe because the phone ran the ramp.
 
 | Cmd | Request | Reply |
 |---|---|---|
-| 0x50 get ramp parameters | - | [status, 9 values as u16 in the order of 2.3] |
-| 0x51 set ramp parameters | [key 0x5A 0xA5, 9 x u16] | [status] 0 ok, 1 bad key, 2 out of range, 3 station is running a ramp. Saved to EEPROM 384.. |
+| 0x50 get ramp parameters | - | [status, 8 values as u16 in the order of 2.3] |
+| 0x51 set ramp parameters | [key 0x5A 0xA5, 8 x u16] | [status] 0 ok, 1 bad key, 2 out of range, 3 station is running a ramp. Saved to EEPROM 384.. |
 | 0x52 ramp control | [0 leave mode, 1 enter mode, 2 trigger, 3 abort] | [mode, state] |
-| 0x53 ramp status | - | [mode, state, u16 remaining ms of the state, u16 target, u16 actual peak seen, u16 baseline duty, u16 duty] |
+| 0x53 ramp status | - | [state, ready, u16 ms left, u16 target, u16 highest temperature since the trigger, u16 actual] |
 
 The live frame and the state reply (0x10) stay as they are. The app polls 0x53 about 5 times per second, only while its Profiles/Ramp page is open.
 
@@ -98,13 +99,13 @@ The live frame and the state reply (0x10) stay as they are. The app polls 0x53 a
 
 | File | Change |
 |---|---|
-| `ramp.c`, `ramp.h` (new) | State machine, parameters (load, check, save), `RampTick(int *target)` called from `MenuTasks`, `RampEnter/Leave/Trigger/Abort`, status for protocol, contact detection (step 2). Also entries in `nbproject/configurations.xml` and the three `Makefile-*.mk`. |
+| `ramp_core.h` (new) | State machine, parameters (load, check, save), `RampTick()` called from `MenuTasks`, enter/leave/trigger/abort, status for the protocol, contact detection (step 2). It is **included by menu.c** instead of being a separate .c file, because a new .c file needs entries in `nbproject/configurations.xml` and the generated `Makefile-*.mk` files. |
 | `menu.c` | One hook before `CTTemp = i` (`if(RampMode) i = RampTick(i)`), skip sleep and stand-by logic in ramp mode, menu item RAMP MODE (action), header text, knob press and long press handling, abort when the menu opens. Remote helpers `RemoteRamp*`. |
 | `menu.h` | Declarations; `RAMP` display mode for the app's `inMenu` handling if a screen mode is needed. |
-| `PID.c` / `PID.h` | `volatile UINT32 PIDCap` (default `0x00FFFFFF`), clamp of `pdt` and of `PIDDutyI` right after `pdt = PIDDutyP + PIDDutyI`. With the default value the result is bit for bit the old one. |
+| `PID.c` / `PID.h` | **No change** (the power cap was dropped). |
 | `io.c` | Commands 0x50-0x53, protocol byte 7. |
 | `pars.h` | `RAMP_EEP_ADDR 384`, marker. |
-| Android | Later: a Ramp page next to the profiles (parameters, status, enter/leave/trigger/abort, backup of the 9 values in the settings file). |
+| Android | Later: a Ramp page next to the profiles (parameters, status, enter/leave/trigger/abort, backup of the 8 values in the settings file). |
 
 ## 5. Steps
 
@@ -113,8 +114,5 @@ The live frame and the state reply (0x10) stay as they are. The app polls 0x53 a
 3. **Step 2b**: contact detection with those thresholds.
 4. Afterwards, if wanted: a step table (preheat/soak/reflow), per tip parameters (after TIP PRESET, which stays paused).
 
-## 6. Open points for the user
-- Is one ramp + dwell enough for version 1 (the list in 2.3), or must a step table be in version 1?
-- Power-up always in classic mode: agreed in the chat, kept here.
-- Stand: inside ramp mode the idle temperature also applies while the iron is in its stand (no HOLDER T, no sleep). The time-out ends the mode after 10 minutes idle. Is that what you want, or should the stand use HOLDER T as today?
-- Hard peak maximum of 350 C in the firmware: change if needed.
+## 6. Decided
+All four open points were answered on 2026-11-19 (see the top). The capacitor's own limits are not checked by the firmware: the TCJ datasheet (Kyocera AVX) gives no hand-soldering limits, only 3 reflow cycles according to J-STD-020.

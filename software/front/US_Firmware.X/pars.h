@@ -92,8 +92,8 @@ typedef struct {
 #define NB_OF_MENU_PARAMS  (sizeof(MenuOrder) / sizeof(MenuOrder[0])
 
 #ifndef _PARS_C
-extern const char MenuOrder[23];
-extern const t_ParDef ParDef[33];
+extern const char MenuOrder[24];
+extern const t_ParDef ParDef[34];
 extern char UserName[NAME_LEN + 1];  //name shown at power-up, empty = show the logo
 extern void SaveName(void);
 extern char UserPin[PIN_LEN + 1];    //menu pincode, empty = no pincode

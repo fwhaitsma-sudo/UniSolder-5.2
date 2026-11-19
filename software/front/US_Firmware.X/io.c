@@ -124,13 +124,13 @@ static int HandleCommand(void){
                     done = 1;
                 }
                 break;
-            case 0x80: //application info: [version minor, version major, board version, protocol (1 = remote control + settings, 2 = PID save, 3 = live settings 0x40/0x41, 4 = name 0x42/0x43, 5 = saved PID backup 0x44/0x45, 6 = state flag 32: iron in its stand now)]
+            case 0x80: //application info: [version minor, version major, board version, protocol (1 = remote control + settings, 2 = PID save, 3 = live settings 0x40/0x41, 4 = name 0x42/0x43, 5 = saved PID backup 0x44/0x45, 6 = state flag 32: iron in its stand now, 7 = ramp mode 0x50-0x53, state flag 64)]
                 if(!TxBusy()){
                     cTX->Command = 0x80;
                     cTX->Data[0] = VERSION_MINOR;
                     cTX->Data[1] = VERSION_MAJOR;
                     cTX->Data[2] = BoardVersion;
-                    cTX->Data[3] = 6;
+                    cTX->Data[3] = 7;
                     TxSend();
                     done = 1;
                 }
@@ -281,6 +281,60 @@ static int HandleCommand(void){
                         for(i = 0; i < 12; i++) sb[i] = cRX->Data[3 + i];
                         cTX->Data[0] = IronPidSlotWrite(cRX->Data[2], sb);
                     }
+                    TxSend();
+                    done = 1;
+                }
+                break;
+            case 0x50: //read the ramp mode parameters; replies [status 0, 8 x u16: idle C, peak C, rate C/s, dwell 0.1 s, lockout s, time-out min, duty jump %, dip 0.5 C]
+                if(!TxBusy()){
+                    unsigned int rv[8];
+                    int i;
+                    RemoteRampGet(rv);
+                    cTX->Command = 0x50;
+                    cTX->Data[0] = 0;
+                    for(i = 0; i < 8; i++) Put16(1 + i * 2, rv[i]);
+                    TxSend();
+                    done = 1;
+                }
+                break;
+            case 0x51: //set the ramp mode parameters [key 0x5A 0xA5, 8 x u16]; replies [status 0 ok, 1 bad key, 2 out of range, 3 a ramp is running]
+                if(!TxBusy()){
+                    unsigned int rv[8];
+                    int i;
+                    cTX->Command = 0x51;
+                    if(cRX->Data[0] != REMOTE_KEY0 || cRX->Data[1] != REMOTE_KEY1){
+                        cTX->Data[0] = 1;
+                    }
+                    else{
+                        for(i = 0; i < 8; i++) rv[i] = cRX->Data[2 + i * 2] | (cRX->Data[3 + i * 2] << 8);
+                        cTX->Data[0] = RemoteRampSet(rv);
+                    }
+                    TxSend();
+                    done = 1;
+                }
+                break;
+            case 0x52: //ramp mode control [0 leave, 1 enter, 2 trigger, 3 abort]; replies [status 0 done / 1 not possible / 3 in menu, state]
+                if(!TxBusy()){
+                    unsigned int ro[6];
+                    cTX->Command = 0x52;
+                    cTX->Data[0] = RemoteRampControl(cRX->Data[0]);
+                    RemoteRampStatus(ro);
+                    cTX->Data[1] = ro[0];
+                    TxSend();
+                    done = 1;
+                }
+                break;
+            case 0x53: //ramp mode status; replies [state 0 off/1 idle/2 ramp/3 peak/4 cool/5 lockout, ready, u16 ms left, u16 target C, u16 highest temperature C, u16 actual C]
+                if(!TxBusy()){
+                    unsigned int ro[6];
+                    RemoteRampStatus(ro);
+                    cTX->Command = 0x53;
+                    cTX->Data[0] = ro[0];
+                    cTX->Data[1] = ro[4];
+                    Put16(2, ro[1]);
+                    Put16(4, ro[2]);
+                    Put16(6, ro[3]);
+                    Put16(8, ro[5]);
                     TxSend();
                     done = 1;
                 }
