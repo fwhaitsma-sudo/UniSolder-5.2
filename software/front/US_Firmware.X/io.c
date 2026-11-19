@@ -285,28 +285,28 @@ static int HandleCommand(void){
                     done = 1;
                 }
                 break;
-            case 0x50: //read the ramp mode parameters; replies [status 0, 8 x u16: idle C, peak C, rate C/s, dwell 0.1 s, lockout s, time-out min, duty jump %, dip 0.5 C]
+            case 0x50: //read the ramp mode parameters; replies [status 0, 9 x u16: idle C, peak C, rate C/s, dwell 0.1 s, lockout s, time-out min, duty jump %, dip 0.5 C, ready limit C]
                 if(!TxBusy()){
-                    unsigned int rv[8];
+                    unsigned int rv[9];
                     int i;
                     RemoteRampGet(rv);
                     cTX->Command = 0x50;
                     cTX->Data[0] = 0;
-                    for(i = 0; i < 8; i++) Put16(1 + i * 2, rv[i]);
+                    for(i = 0; i < 9; i++) Put16(1 + i * 2, rv[i]);
                     TxSend();
                     done = 1;
                 }
                 break;
-            case 0x51: //set the ramp mode parameters [key 0x5A 0xA5, 8 x u16]; replies [status 0 ok, 1 bad key, 2 out of range, 3 a ramp is running]
+            case 0x51: //set the ramp mode parameters [key 0x5A 0xA5, 9 x u16]; replies [status 0 ok, 1 bad key, 2 out of range, 3 a ramp is running]
                 if(!TxBusy()){
-                    unsigned int rv[8];
+                    unsigned int rv[9];
                     int i;
                     cTX->Command = 0x51;
                     if(cRX->Data[0] != REMOTE_KEY0 || cRX->Data[1] != REMOTE_KEY1){
                         cTX->Data[0] = 1;
                     }
                     else{
-                        for(i = 0; i < 8; i++) rv[i] = cRX->Data[2 + i * 2] | (cRX->Data[3 + i * 2] << 8);
+                        for(i = 0; i < 9; i++) rv[i] = cRX->Data[2 + i * 2] | (cRX->Data[3 + i * 2] << 8);
                         cTX->Data[0] = RemoteRampSet(rv);
                     }
                     TxSend();

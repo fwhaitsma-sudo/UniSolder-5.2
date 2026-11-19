@@ -684,20 +684,20 @@ class DeviceLink(private val ctx: Context) {
 
     // ---- ramp mode (firmware protocol 7) ----
 
-    /** The 8 ramp parameters: idle C, peak C, rate C/s, dwell 0.1 s, lockout s, idle time-out min, contact duty jump %, contact dip 0.5 C. */
+    /** The 9 ramp parameters: idle C, peak C, rate C/s, dwell 0.1 s, lockout s, idle time-out min, contact duty jump %, contact dip 0.5 C, ready limit C. */
     fun getRampPars(): IntArray? {
         val r = send(byteArrayOf(CMD_RAMP_GET), 1000) ?: return null
         if (r.u(0) != 0) return null
-        return IntArray(8) { r.u16(1 + it * 2) }
+        return IntArray(RAMP_PARS) { r.u16(1 + it * 2) }
     }
 
     /** 0 done, 1 bad key, 2 out of range, 3 a ramp is running, null no answer. */
     fun setRampPars(v: IntArray): Int? {
-        val b = ByteArray(3 + 16)
+        val b = ByteArray(3 + RAMP_PARS * 2)
         b[0] = CMD_RAMP_SET
         b[1] = 0x5A
         b[2] = 0xA5.toByte()
-        for (i in 0 until 8) {
+        for (i in 0 until RAMP_PARS) {
             b[3 + i * 2] = (v[i] and 255).toByte()
             b[4 + i * 2] = ((v[i] shr 8) and 255).toByte()
         }
@@ -737,6 +737,7 @@ class DeviceLink(private val ctx: Context) {
         const val CMD_SET_NAME: Byte = 0x43
         const val CMD_PID_SLOT_READ: Byte = 0x44
         const val CMD_PID_SLOT_WRITE: Byte = 0x45
+        const val RAMP_PARS = 9
         const val CMD_RAMP_GET: Byte = 0x50
         const val CMD_RAMP_SET: Byte = 0x51
         const val CMD_RAMP_CONTROL: Byte = 0x52

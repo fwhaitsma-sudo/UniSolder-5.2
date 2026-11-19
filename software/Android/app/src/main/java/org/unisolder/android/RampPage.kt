@@ -34,7 +34,8 @@ class RampPage(private val act: Activity, private val link: DeviceLink, private 
     private val abortButton = Button(act)
     private val saveButton = Button(act)
     private val fields = ArrayList<EditText>()
-    private var pars = IntArray(8)          // as read from the station: the two contact values are kept as they are
+    private val fieldPar = ArrayList<Int>()     // index in the station's parameter list for each field
+    private var pars = IntArray(DeviceLink.RAMP_PARS)          // as read from the station: the two contact values are kept as they are
     private var inMode = false
     private var visible = false
     private var parsLoaded = false
@@ -140,7 +141,8 @@ class RampPage(private val act: Activity, private val link: DeviceLink, private 
         addField(col, "Peak temperature (°C)", 1, "At least 10 above idle, 350 at most.")
         addField(col, "Ramp rate (°C per second)", 2, "5-100. The tip cannot always follow a high rate: check the highest temperature below.")
         addField(col, "Dwell at the peak (seconds)", 3, "0-10, one decimal.", decimal = true)
-        addField(col, "Lockout after the ramp (seconds)", 4, "0-60. No new ramp can start in this time.")
+        addField(col, "Lockout after the dwell (seconds)", 4, "0-60, counted from the end of the dwell. No new ramp can start in this time. The tip cools by itself.")
+        addField(col, "Ready up to (°C)", 8, "At least 10 above idle and at most 10 below the peak. A new ramp can start when the tip is not hotter than this, and then starts from the tip's temperature.")
         addField(col, "Time-out when idle (minutes)", 5, "1-60. After this time without use the station leaves ramp mode.")
 
         saveButton.text = "Save values in the station"
@@ -165,6 +167,7 @@ class RampPage(private val act: Activity, private val link: DeviceLink, private 
         e.setTextColor(text)
         e.tag = if (decimal) "dec" else "int"
         fields.add(e)
+        fieldPar.add(index)
         col.addView(e, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         val h = TextView(act)
         h.text = hint
@@ -214,7 +217,8 @@ class RampPage(private val act: Activity, private val link: DeviceLink, private 
                     pars = p
                     parsLoaded = true
                     for ((i, f) in fields.withIndex()) {
-                        f.setText(if (i == 3) String.format(java.util.Locale.US, "%.1f", p[3] / 10.0) else p[i].toString())
+                        val k = fieldPar[i]
+                        f.setText(if (k == 3) String.format(java.util.Locale.US, "%.1f", p[3] / 10.0) else p[k].toString())
                     }
                 }
                 if (s != null) showStatus(s)
@@ -228,7 +232,8 @@ class RampPage(private val act: Activity, private val link: DeviceLink, private 
         try {
             for ((i, f) in fields.withIndex()) {
                 val t = f.text.toString().trim().replace(',', '.')
-                v[i] = if (i == 3) Math.round(t.toDouble() * 10).toInt() else t.toInt()
+                val k = fieldPar[i]
+                v[k] = if (k == 3) Math.round(t.toDouble() * 10).toInt() else t.toInt()
             }
         } catch (e: NumberFormatException) {
             Toast.makeText(act, "Check the values", Toast.LENGTH_SHORT).show()
@@ -240,7 +245,7 @@ class RampPage(private val act: Activity, private val link: DeviceLink, private 
             ui.post {
                 when (st) {
                     0 -> { if (back != null) pars = back; Toast.makeText(act, "Saved in the station", Toast.LENGTH_SHORT).show() }
-                    2 -> Toast.makeText(act, "A value is out of range (peak at least 10 above idle)", Toast.LENGTH_LONG).show()
+                    2 -> Toast.makeText(act, "A value is out of range (peak at least 10 above idle; ready limit between idle + 10 and peak - 10)", Toast.LENGTH_LONG).show()
                     3 -> Toast.makeText(act, "A ramp is running: wait until it is finished", Toast.LENGTH_LONG).show()
                     else -> Toast.makeText(act, "The station did not accept the values", Toast.LENGTH_LONG).show()
                 }
@@ -270,10 +275,10 @@ class RampPage(private val act: Activity, private val link: DeviceLink, private 
         refreshButtons()
         val name = when (s.state) {
             0 -> "Off (normal station)"
-            1 -> if (s.ready) "Ready" else if (s.actual > pars[0]) "Cooling to the idle temperature" else "Heating to the idle temperature"
+            1 -> if (s.ready) "Ready" else if (s.actual > pars[8]) "Cooling: waiting for the ready limit" else "Heating to the idle temperature"
             2 -> "Ramping"
             3 -> "Peak"
-            4 -> "Cooling down"
+            4 -> "Lockout"
             5 -> "Lockout"
             else -> "?"
         }
