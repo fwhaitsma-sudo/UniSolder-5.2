@@ -21,7 +21,8 @@ import java.util.concurrent.ExecutorService
  * The phone is only an editor and a viewer: nothing here has to stay connected for the station to finish a ramp.
  * (Protocol 8 had a pad contact start and a 20 ms capture buffer; both were removed again, the app does not use them.)
  * Protocol 9 replaces the single ramp by a step profile (0x56/0x57) and adds the JBC style start: lift the iron, the profile starts
- * after the start delay.
+ * after the start delay. Protocol 10 stores up to 10 named profiles in the station (0x58-0x5B): load one as the active steps,
+ * save the steps in the editor to a slot, delete.
  */
 class RampPage(private val act: Activity, private val link: DeviceLink, private val io: ExecutorService) {
     val view: View
@@ -44,6 +45,9 @@ class RampPage(private val act: Activity, private val link: DeviceLink, private 
     private val stepFields = ArrayList<EditText>()      // 6 x (temperature, rate, hold)
     private val stepCount = EditText(act)
     private var stepsLoaded = false
+    private val slotsBox = LinearLayout(act)            // stored profiles (protocol 10)
+    private val slotList = LinearLayout(act)
+    private var activeSlot = -1
     private val tenths = HashSet<Int>()                 // fields shown in units of 0.1 (dwell, start delay, maximum rate)
     private var inMode = false
     private var visible = false
@@ -213,6 +217,23 @@ class RampPage(private val act: Activity, private val link: DeviceLink, private 
         }
         col.addView(profileBox)
 
+        // ---- stored profiles (protocol 10) ----
+        slotsBox.orientation = LinearLayout.VERTICAL
+        val sh = TextView(act)
+        sh.text = "Profiles stored in the station"
+        sh.textSize = 18f
+        sh.setTextColor(if (dark) yellow else 0xFF9A7000.toInt())
+        sh.setPadding(0, dp(20), 0, dp(4))
+        slotsBox.addView(sh)
+        val si = TextView(act)
+        si.text = "Up to 10 profiles, kept in the station. Load makes one the active profile (the steps above). " +
+            "Save here stores the steps shown above (also when they are not saved in the station yet) under a name."
+        si.setTextColor(text)
+        slotsBox.addView(si)
+        slotList.orientation = LinearLayout.VERTICAL
+        slotsBox.addView(slotList)
+        col.addView(slotsBox)
+
 
         saveButton.text = "Save values in the station"
         style(saveButton)
@@ -260,6 +281,7 @@ class RampPage(private val act: Activity, private val link: DeviceLink, private 
         legacyBox.visibility = if (p9) View.GONE else View.VISIBLE
         profileBox.visibility = if (p9) View.VISIBLE else View.GONE
         stepCount.isEnabled = p9
+        slotsBox.visibility = if (link.connected && protocol() >= 10) View.VISIBLE else View.GONE
         for (f in stepFields) f.isEnabled = p9
         if (!link.connected) noteText.text = "Not connected."
         else if (protocol() < 7) noteText.text = "This station's firmware has no ramp mode (it needs the ramp mode firmware, protocol 7)."
@@ -286,7 +308,8 @@ class RampPage(private val act: Activity, private val link: DeviceLink, private 
     private fun loadPars() {
         io.execute {
             val p = link.getRampPars(if (protocol() >= 9) DeviceLink.RAMP_PARS9 else if (protocol() >= 8) DeviceLink.RAMP_PARS8 else DeviceLink.RAMP_PARS)
-            val steps = if (protocol() >= 9) link.getRampSteps() else null
+            val steps = if (protocol() >= 9) link.getRampSteps(protocol() >= 10) else null
+            val slots = if (protocol() >= 10) readSlots() else null
             val s = link.rampStatus()
             ui.post {
                 if (p != null) {
@@ -298,7 +321,8 @@ class RampPage(private val act: Activity, private val link: DeviceLink, private 
                         f.setText(if (k in tenths) String.format(java.util.Locale.US, "%.1f", p[k] / 10.0) else p[k].toString())
                     }
                 }
-                if (steps != null) showSteps(steps.first, steps.second)
+                if (steps != null) { showSteps(steps.first, steps.second); activeSlot = steps.slot }
+                if (slots != null) showSlots(slots)
                 if (s != null) showStatus(s)
             }
         }
@@ -321,18 +345,9 @@ class RampPage(private val act: Activity, private val link: DeviceLink, private 
         var steps: IntArray? = null
         var count = 0
         if (protocol() >= 9) {
-            try {
-                count = stepCount.text.toString().trim().toInt()
-                val a = IntArray(DeviceLink.RAMP_STEPS * 3)
-                for ((i, f) in stepFields.withIndex()) {
-                    val t = f.text.toString().trim().replace(',', '.')
-                    a[i] = if (i % 3 == 0) t.toInt() else Math.round(t.toDouble() * 10).toInt()
-                }
-                steps = a
-            } catch (e: NumberFormatException) {
-                Toast.makeText(act, "Check the step values", Toast.LENGTH_SHORT).show()
-                return
-            }
+            val e = editorSteps() ?: return
+            count = e.first
+            steps = e.second
         }
         val steps9: IntArray? = steps
         val count9 = count
@@ -348,12 +363,14 @@ class RampPage(private val act: Activity, private val link: DeviceLink, private 
                 }
             }
             val back = if (st == 0) link.getRampPars(v.size) else null
-            val backSteps = if (st == 0 && steps9 != null) link.getRampSteps() else null
+            val backSteps = if (st == 0 && steps9 != null) link.getRampSteps(protocol() >= 10) else null
+            val slots = if (st == 0 && protocol() >= 10) readSlots() else null
             ui.post {
                 when (st) {
                     0 -> {
                         if (back != null) pars = back
-                        if (backSteps != null) showSteps(backSteps.first, backSteps.second)
+                        if (backSteps != null) { showSteps(backSteps.first, backSteps.second); activeSlot = backSteps.slot }
+                        if (slots != null) showSlots(slots)
                         Toast.makeText(act, "Saved in the station", Toast.LENGTH_SHORT).show()
                     }
                     2 -> Toast.makeText(act, if (steps9 != null) "A value is out of range: steps 100-350 °C, rate up to the maximum rate, hold up to 600 s; the highest step at least 10 above idle; ready limit between idle + 10 and the highest step - 10"
@@ -363,6 +380,143 @@ class RampPage(private val act: Activity, private val link: DeviceLink, private 
                 }
             }
         }
+    }
+
+    /** The steps in the editor: Pair(number of steps, 6 x 3 values), or null (with a message) when a field is not a number. */
+    private fun editorSteps(): Pair<Int, IntArray>? {
+        try {
+            val count = stepCount.text.toString().trim().toInt()
+            val a = IntArray(DeviceLink.RAMP_STEPS * 3)
+            for ((i, f) in stepFields.withIndex()) {
+                val t = f.text.toString().trim().replace(',', '.')
+                a[i] = if (i % 3 == 0) t.toInt() else Math.round(t.toDouble() * 10).toInt()
+            }
+            return Pair(count, a)
+        } catch (e: NumberFormatException) {
+            Toast.makeText(act, "Check the step values", Toast.LENGTH_SHORT).show()
+            return null
+        }
+    }
+
+    /** Reads the 10 stored profiles (call on the io thread); null when the station stops answering. */
+    private fun readSlots(): List<RampSlot>? {
+        val l = ArrayList<RampSlot>()
+        for (i in 0 until DeviceLink.RAMP_SLOTS) l.add(link.rampSlotRead(i) ?: return null)
+        return l
+    }
+
+    private fun stepSummary(count: Int, s: IntArray): String {
+        val sb = StringBuilder()
+        for (k in 0 until count) {
+            if (k > 0) sb.append(" → ")
+            sb.append(s[k * 3]).append("°C")
+            if (s[k * 3 + 2] > 0) sb.append(" ").append(String.format(java.util.Locale.US, "%.0f", s[k * 3 + 2] / 10.0)).append("s")
+        }
+        return sb.toString()
+    }
+
+    private fun showSlots(slots: List<RampSlot>) {
+        val text = if (dark) 0xFFFFFFFF.toInt() else 0xFF000000.toInt()
+        slotList.removeAllViews()
+        for (sl in slots) {
+            val t = TextView(act)
+            val head = (sl.slot + 1).toString() + ". " + (if (sl.count == 0) "(empty)" else sl.name.ifEmpty { "(no name)" }) +
+                (if (sl.slot == activeSlot && sl.count > 0) "   — active" else "")
+            t.text = if (sl.count == 0) head else head + "\n" + stepSummary(sl.count, sl.steps)
+            t.setTextColor(text)
+            t.setPadding(0, dp(10), 0, 0)
+            slotList.addView(t)
+            val row = LinearLayout(act)
+            row.orientation = LinearLayout.HORIZONTAL
+            val load = Button(act)
+            load.text = "Load"
+            val saveHere = Button(act)
+            saveHere.text = "Save here"
+            val del = Button(act)
+            del.text = "Delete"
+            for (b in listOf(load, saveHere, del)) style(b)
+            load.isEnabled = sl.count > 0
+            del.isEnabled = sl.count > 0
+            load.setOnClickListener { loadSlot(sl) }
+            saveHere.setOnClickListener { askSaveSlot(sl) }
+            del.setOnClickListener { confirmDeleteSlot(sl) }
+            row.addView(load, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            row.addView(saveHere, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            row.addView(del, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            slotList.addView(row)
+        }
+    }
+
+    private fun refreshSlotsAndSteps(msg: String?) {
+        io.execute {
+            val steps = link.getRampSteps(true)
+            val slots = readSlots()
+            ui.post {
+                if (steps != null) { showSteps(steps.first, steps.second); activeSlot = steps.slot }
+                if (slots != null) showSlots(slots)
+                if (msg != null) Toast.makeText(act, msg, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun loadSlot(sl: RampSlot) {
+        io.execute {
+            val r = link.rampSlotLoad(sl.slot)
+            ui.post {
+                when (r) {
+                    0 -> refreshSlotsAndSteps("Loaded: " + sl.name.ifEmpty { "profile " + (sl.slot + 1) })
+                    1 -> Toast.makeText(act, "This slot is empty", Toast.LENGTH_SHORT).show()
+                    2 -> Toast.makeText(act, "Not possible with the station's values: a step is faster than the maximum rate, or the highest step is not at least 10 above idle and the ready limit + 10", Toast.LENGTH_LONG).show()
+                    3 -> Toast.makeText(act, "A profile is running: wait until it is finished", Toast.LENGTH_LONG).show()
+                    else -> Toast.makeText(act, "No answer from the station", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    private fun askSaveSlot(sl: RampSlot) {
+        val e = editorSteps() ?: return
+        val input = EditText(act)
+        input.setText(sl.name)
+        input.filters = arrayOf(android.text.InputFilter.LengthFilter(DeviceLink.RAMP_NAME_LEN))
+        input.hint = "Name (up to 10 characters)"
+        android.app.AlertDialog.Builder(act)
+            .setTitle("Save the steps above in slot " + (sl.slot + 1))
+            .setMessage(stepSummary(e.first, e.second) + (if (sl.count > 0) "\nThis replaces " + sl.name.ifEmpty { "the stored profile" } + "." else ""))
+            .setView(input)
+            .setPositiveButton("Save") { _, _ ->
+                val name = input.text.toString().trim()
+                if (name.any { it.code < 32 || it.code > 126 }) {
+                    Toast.makeText(act, "Use letters, digits and plain punctuation only (no accents)", Toast.LENGTH_LONG).show()
+                } else {
+                    io.execute {
+                        val r = link.rampSlotWrite(sl.slot, name, e.first, e.second)
+                        ui.post {
+                            if (r == 0) refreshSlotsAndSteps("Saved in slot " + (sl.slot + 1))
+                            else Toast.makeText(act, if (r == 2) "A step is out of range (1-6 steps, 100-350 °C, rate 0.1-100 °C/s, hold up to 600 s)" else "The station did not accept it", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun confirmDeleteSlot(sl: RampSlot) {
+        android.app.AlertDialog.Builder(act)
+            .setTitle("Delete " + sl.name.ifEmpty { "profile " + (sl.slot + 1) } + "?")
+            .setMessage("The active profile (the steps above) does not change.")
+            .setPositiveButton("Delete") { _, _ ->
+                io.execute {
+                    val r = link.rampSlotDelete(sl.slot)
+                    ui.post {
+                        if (r == 0) refreshSlotsAndSteps("Deleted")
+                        else Toast.makeText(act, "The station did not delete it", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun showSteps(count: Int, s: IntArray) {

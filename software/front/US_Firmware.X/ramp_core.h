@@ -26,6 +26,12 @@
 #define RAMP_STEP_ADDR  420     //EEPROM: marker, then RAMP_NSTEP x (temperature C, rate 0.1 C/s, hold 0.1 s) u16
 #define RAMP_STEP_MARK  0xE1
 #define RAMP_NSTEP      6
+#define RAMP_ACTSLOT_ADDR 457   //EEPROM: number of the stored profile the steps were loaded from (0xFF = none / changed since)
+#define RAMP_SLOT_ADDR  2048    //EEPROM (24LC64, 8 KB; tip presets end at 1920): stored profiles, RAMP_SLOT_SIZE bytes each:
+#define RAMP_SLOT_SIZE  64      //  mark, name (RAMP_NAME_LEN characters, 0 padded), number of steps, RAMP_NSTEP x 3 u16 (48 bytes)
+#define RAMP_NSLOT      10
+#define RAMP_SLOT_MARK  0xE5
+#define RAMP_NAME_LEN   10
 
 enum { RS_OFF = 0, RS_IDLE, RS_RAMP, RS_PEAK, RS_COOL, RS_LOCK };
 
@@ -57,6 +63,7 @@ static int RampActualNow;       //actual temperature at the last tick, whole deg
 static UINT8 RampLiftArmed;     //the iron was lifted from its stand: start after the delay (lift start)
 static int RampLiftN;           //ticks since the lift
 static UINT8 RampWasInStand;
+static int RampActSlot = -1;    //stored profile the steps were loaded from, -1 = none
 
 static int RampPeakOf(UINT16 s[][3], int n){
     int i, p = 0;
@@ -117,6 +124,8 @@ static void RampLoad(void){
         for(i = 0; i < RAMP_NPAR; i++) RampP[i] = v[i];
         for(i = 0; i < RAMP_NSTEP; i++) for(j = 0; j < 3; j++) RampS[i][j] = s[i][j];
     }
+    n = EEPRead(RAMP_ACTSLOT_ADDR, 0, 1);
+    RampActSlot = (n < RAMP_NSLOT) ? n : -1;
 }
 
 static void RampEepPut(int a, UINT8 b){
@@ -455,11 +464,12 @@ void RemoteRampStepsGet(unsigned int * s){
     for(i = 0; i < RAMP_NSTEP; i++) for(j = 0; j < 3; j++) s[i * 3 + j] = RampS[i][j];
 }
 
-//count = number of steps; 0 done, 2 out of range, 3 a profile is running
-int RemoteRampStepsSet(int count, const unsigned int * s){
+//count = number of steps; 0 done, 2 out of range, 3 a profile is running.
+//slot = the stored profile these steps come from (-1 = none: the active slot is forgotten when the steps change)
+static int RampStepsSet(int count, const unsigned int * s, int slot){
     UINT16 n[RAMP_NPAR];
     UINT16 st[RAMP_NSTEP][3];
-    int i, j;
+    int i, j, changed = 0;
     RampLoad();
     if(RampSt == RS_RAMP || RampSt == RS_PEAK) return 3;
     for(i = 0; i < RAMP_NPAR; i++) n[i] = RampP[i];
@@ -476,10 +486,96 @@ int RemoteRampStepsSet(int count, const unsigned int * s){
         if(st[i][2] > 6000) st[i][2] = 0;
     }
     if(!RampValidAll(n, st)) return 2;
+    if(n[15] != RampP[15]) changed = 1;
+    for(i = 0; i < count; i++) for(j = 0; j < 3; j++) if(st[i][j] != RampS[i][j]) changed = 1;
     for(i = 0; i < RAMP_NPAR; i++) RampP[i] = n[i];
     for(i = 0; i < RAMP_NSTEP; i++) for(j = 0; j < 3; j++) RampS[i][j] = st[i][j];
     RampSave();
+    if(slot >= 0) RampActSlot = slot;
+    else if(changed) RampActSlot = -1;
+    RampEepPut(RAMP_ACTSLOT_ADDR, (RampActSlot >= 0) ? (UINT8)RampActSlot : 0xFF);
     return 0;
+}
+
+int RemoteRampStepsSet(int count, const unsigned int * s){
+    return RampStepsSet(count, s, -1);
+}
+
+//---- stored profiles (slots) ----
+//Reads slot: name (RAMP_NAME_LEN + 1, 0 terminated), *count, s = RAMP_NSTEP x 3. Returns 0 ok, 1 empty, 2 bad slot.
+int RemoteRampSlotRead(int slot, char * name, unsigned int * count, unsigned int * s){
+    UINT8 b[RAMP_SLOT_SIZE];
+    int i, a;
+    name[0] = 0;
+    *count = 0;
+    for(i = 0; i < RAMP_NSTEP * 3; i++) s[i] = 0;
+    if(slot < 0 || slot >= RAMP_NSLOT) return 2;
+    a = RAMP_SLOT_ADDR + slot * RAMP_SLOT_SIZE;
+    EEPRead(a, b, 32);                              //two reads, so that no read crosses a 32 byte page of the EEPROM
+    EEPRead(a + 32, b + 32, 32);
+    if(b[0] != RAMP_SLOT_MARK || b[1 + RAMP_NAME_LEN] < 1 || b[1 + RAMP_NAME_LEN] > RAMP_NSTEP) return 1;
+    for(i = 0; i < RAMP_NAME_LEN; i++) name[i] = (char)b[1 + i];
+    name[RAMP_NAME_LEN] = 0;
+    *count = b[1 + RAMP_NAME_LEN];
+    for(i = 0; i < RAMP_NSTEP * 3; i++) s[i] = (unsigned int)(b[2 + RAMP_NAME_LEN + i * 2] | (b[3 + RAMP_NAME_LEN + i * 2] << 8));
+    return 0;
+}
+
+//Stores a profile in slot. name: RAMP_NAME_LEN characters (printable ASCII, 0 = end). Returns 0 ok, 2 bad slot or values.
+//The values are checked against the fixed limits only (100-350 C, rate at least 0.1 C/s, hold up to 600 s); loading checks them
+//against the station's values (maximum rate, idle, ready limit).
+int RemoteRampSlotWrite(int slot, const char * name, int count, const unsigned int * s){
+    UINT8 b[RAMP_SLOT_SIZE];
+    int i, a, end = 0;
+    if(slot < 0 || slot >= RAMP_NSLOT || count < 1 || count > RAMP_NSTEP) return 2;
+    for(i = 0; i < count; i++){
+        if(s[i * 3] < 100 || s[i * 3] > 350 || s[i * 3 + 1] < 1 || s[i * 3 + 1] > 1000 || s[i * 3 + 2] > 6000) return 2;
+    }
+    for(i = 0; i < RAMP_SLOT_SIZE; i++) b[i] = 0xFF;
+    b[0] = RAMP_SLOT_MARK;
+    for(i = 0; i < RAMP_NAME_LEN; i++){
+        char c = end ? 0 : name[i];
+        if(!c) end = 1;
+        else if(c < 32 || c > 126) return 2;
+        b[1 + i] = (UINT8)c;
+    }
+    b[1 + RAMP_NAME_LEN] = (UINT8)count;
+    for(i = 0; i < RAMP_NSTEP * 3; i++){
+        unsigned int v = (i / 3 < count) ? s[i] : ((i % 3 == 0) ? 250 : ((i % 3 == 1) ? 1 : 0));
+        b[2 + RAMP_NAME_LEN + i * 2] = (UINT8)(v & 0xFF);
+        b[3 + RAMP_NAME_LEN + i * 2] = (UINT8)((v >> 8) & 0xFF);
+    }
+    a = RAMP_SLOT_ADDR + slot * RAMP_SLOT_SIZE;
+    for(i = 1; i < RAMP_SLOT_SIZE; i++) RampEepPut(a + i, b[i]);
+    RampEepPut(a, b[0]);                            //the mark last: a slot is only valid once it is complete
+    return 0;
+}
+
+//0 ok, 2 bad slot
+int RemoteRampSlotDelete(int slot){
+    if(slot < 0 || slot >= RAMP_NSLOT) return 2;
+    RampEepPut(RAMP_SLOT_ADDR + slot * RAMP_SLOT_SIZE, 0xFF);
+    RampLoad();
+    if(RampActSlot == slot){
+        RampActSlot = -1;
+        RampEepPut(RAMP_ACTSLOT_ADDR, 0xFF);
+    }
+    return 0;
+}
+
+//Makes the stored profile the active one. 0 ok, 1 empty, 2 bad slot or not valid with the station's values, 3 a profile is running
+int RemoteRampSlotLoad(int slot){
+    char name[RAMP_NAME_LEN + 1];
+    unsigned int count, s[RAMP_NSTEP * 3];
+    int r = RemoteRampSlotRead(slot, name, &count, s);
+    if(r) return r;
+    return RampStepsSet((int)count, s, slot);
+}
+
+//stored profile the active steps were loaded from, 0xFF = none
+unsigned int RemoteRampActiveSlot(void){
+    RampLoad();
+    return (RampActSlot >= 0) ? (unsigned int)RampActSlot : 0xFFu;
 }
 
 //cmd 0 leave, 1 enter, 2 trigger, 3 abort. Returns 0 done, 1 not possible, 3 in menu; the mode is in RemoteRampStatus.

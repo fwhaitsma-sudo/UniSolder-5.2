@@ -45,6 +45,12 @@ class RampStatus(val state: Int, val ready: Boolean, val msLeft: Int, val target
                  /** protocol 9: profile step (1 based, 0 = not running), lift start (0 none, 1 counting the delay, 2 waiting until ready), ms left of the delay */
                  val step: Int = 0, val lift: Int = 0, val liftMs: Int = 0)
 
+/** Active profile steps (protocol 9/10): first = number of steps, second = 6 x 3 values, slot = stored profile they came from (-1 = none). */
+class RampSteps(val first: Int, val second: IntArray, val slot: Int)
+
+/** A stored profile in the station (protocol 10); count 0 = empty slot. */
+class RampSlot(val slot: Int, val name: String, val count: Int, val steps: IntArray)
+
 class AppInfo(val minor: Int, val major: Int, val board: Int, val protocol: Int) {
     val boardName: String get() = if (board == 1) "5.2C" else "5.2"
 }
@@ -724,12 +730,45 @@ class DeviceLink(private val ctx: Context) {
             r.u(22), r.u(23), r.u16(24))
     }
 
-    /** Profile steps (protocol 9): Pair(number of steps, 6 x (temperature C, rate 0.1 C/s, hold 0.1 s)). */
-    fun getRampSteps(): Pair<Int, IntArray>? {
+    /** Profile steps (protocol 9): number of steps, 6 x (temperature C, rate 0.1 C/s, hold 0.1 s), stored profile they came from (protocol 10, -1 = none). */
+    fun getRampSteps(withSlot: Boolean = false): RampSteps? {
         val r = send(byteArrayOf(CMD_RAMP_STEPS_GET), 1000) ?: return null
         if (r.u(0) != 0) return null
-        return Pair(r.u(1), IntArray(RAMP_STEPS * 3) { r.u16(2 + it * 2) })
+        val a = if (withSlot) r.u(38) else 0xFF
+        return RampSteps(r.u(1), IntArray(RAMP_STEPS * 3) { r.u16(2 + it * 2) }, if (a < RAMP_SLOTS) a else -1)
     }
+
+    /** Stored profile in the station (protocol 10); null = no answer, RampSlot.count 0 = empty slot. */
+    fun rampSlotRead(slot: Int): RampSlot? {
+        val r = send(byteArrayOf(CMD_RAMP_SLOT_READ, slot.toByte()), 1000) ?: return null
+        if (r.u(0) != slot) return null
+        if (r.u(1) != 0) return RampSlot(slot, "", 0, IntArray(RAMP_STEPS * 3))
+        val nb = StringBuilder()
+        for (i in 0 until RAMP_NAME_LEN) { val c = r.u(2 + i); if (c == 0) break; nb.append(c.toChar()) }
+        return RampSlot(slot, nb.toString(), r.u(12), IntArray(RAMP_STEPS * 3) { r.u16(13 + it * 2) })
+    }
+
+    /** 0 ok, 1 bad key, 2 bad slot or values, null no answer. name: up to 10 printable ASCII characters. */
+    fun rampSlotWrite(slot: Int, name: String, count: Int, s: IntArray): Int? {
+        val b = ByteArray(15 + RAMP_STEPS * 6)
+        b[0] = CMD_RAMP_SLOT_WRITE
+        b[1] = 0x5A
+        b[2] = 0xA5.toByte()
+        b[3] = slot.toByte()
+        for (i in 0 until RAMP_NAME_LEN) b[4 + i] = if (i < name.length) name[i].code.toByte() else 0
+        b[14] = count.toByte()
+        for (i in 0 until RAMP_STEPS * 3) {
+            b[15 + i * 2] = (s[i] and 255).toByte()
+            b[16 + i * 2] = ((s[i] shr 8) and 255).toByte()
+        }
+        return send(b, 3000)?.u(0)
+    }
+
+    /** 0 ok, 1 bad key, 2 bad slot, null no answer. */
+    fun rampSlotDelete(slot: Int): Int? = send(byteArrayOf(CMD_RAMP_SLOT_DELETE, 0x5A, 0xA5.toByte(), slot.toByte()), 2000)?.u(0)
+
+    /** Makes a stored profile the active steps: 0 ok, 1 empty, 2 not valid with the station's values, 3 a profile is running, null no answer. */
+    fun rampSlotLoad(slot: Int): Int? = send(byteArrayOf(CMD_RAMP_SLOT_LOAD, slot.toByte()), 3000)?.u(0)
 
     /** 0 done, 1 bad key, 2 out of range, 3 a profile is running, null no answer. s = 6 x 3 values. */
     fun setRampSteps(count: Int, s: IntArray): Int? {
@@ -772,6 +811,12 @@ class DeviceLink(private val ctx: Context) {
         const val RAMP_STEPS = 6
         const val CMD_RAMP_STEPS_GET: Byte = 0x56
         const val CMD_RAMP_STEPS_SET: Byte = 0x57
+        const val CMD_RAMP_SLOT_READ: Byte = 0x58
+        const val CMD_RAMP_SLOT_WRITE: Byte = 0x59
+        const val CMD_RAMP_SLOT_DELETE: Byte = 0x5A
+        const val CMD_RAMP_SLOT_LOAD: Byte = 0x5B
+        const val RAMP_SLOTS = 10
+        const val RAMP_NAME_LEN = 10
         const val CMD_RAMP_GET: Byte = 0x50
         const val CMD_RAMP_SET: Byte = 0x51
         const val CMD_RAMP_CONTROL: Byte = 0x52

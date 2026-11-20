@@ -10,7 +10,7 @@ struct { t_cfg Config[2]; } IronPars = {{{{1}},{{0}}}};
 typedef struct { int CTemp[2]; UINT32 PIDDutyFull; int TAvgF[2]; } t_pv;
 t_pv PIDVars[2];
 int CTTemp, CJTemp = -546, CRTemp = 33, DispTemp, CMode, ManualSleep, BeepTicks;
-UINT8 eep[1024];
+UINT8 eep[8192];
 UINT8 EEPRead(UINT16 a, UINT8 *b, UINT16 c){ int i; if(!b) return eep[a]; for(i=0;i<c;i++) b[i]=eep[a+i]; return 0; }
 void EEPWriteImm(UINT16 a, UINT8 b){ eep[a]=b; }
 void RemoteTouch(void){}

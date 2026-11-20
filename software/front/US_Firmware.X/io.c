@@ -124,13 +124,13 @@ static int HandleCommand(void){
                     done = 1;
                 }
                 break;
-            case 0x80: //application info: [version minor, version major, board version, protocol (1 = remote control + settings, 2 = PID save, 3 = live settings 0x40/0x41, 4 = name 0x42/0x43, 5 = saved PID backup 0x44/0x45, 6 = state flag 32: iron in its stand now, 7 = ramp mode 0x50-0x53, state flag 64, 8 = 13 ramp values (contact detector and capture 0x54/0x55, removed again), 9 = 16 ramp values, profile steps 0x56/0x57, step + lift start in 0x53)]
+            case 0x80: //application info: [version minor, version major, board version, protocol (1 = remote control + settings, 2 = PID save, 3 = live settings 0x40/0x41, 4 = name 0x42/0x43, 5 = saved PID backup 0x44/0x45, 6 = state flag 32: iron in its stand now, 7 = ramp mode 0x50-0x53, state flag 64, 8 = 13 ramp values (contact detector and capture 0x54/0x55, removed again), 9 = 16 ramp values, profile steps 0x56/0x57, step + lift start in 0x53, 10 = stored profiles 0x58-0x5B)]
                 if(!TxBusy()){
                     cTX->Command = 0x80;
                     cTX->Data[0] = VERSION_MINOR;
                     cTX->Data[1] = VERSION_MAJOR;
                     cTX->Data[2] = BoardVersion;
-                    cTX->Data[3] = 9;
+                    cTX->Data[3] = 10;
                     TxSend();
                     done = 1;
                 }
@@ -349,7 +349,8 @@ static int HandleCommand(void){
                     done = 1;
                 }
                 break;
-            case 0x56: //read the profile steps; replies [status 0, number of steps, 6 x (u16 temperature C, u16 rate 0.1 C/s, u16 hold 0.1 s)]
+            case 0x56: //read the profile steps; replies [status 0, number of steps, 6 x (u16 temperature C, u16 rate 0.1 C/s, u16 hold 0.1 s),
+                       //(protocol 10) stored profile they were loaded from 0-9, 0xFF = none or changed since]
                 if(!TxBusy()){
                     unsigned int sv[18];
                     unsigned int pv[16];
@@ -360,6 +361,7 @@ static int HandleCommand(void){
                     cTX->Data[0] = 0;
                     cTX->Data[1] = pv[15];
                     for(i = 0; i < 18; i++) Put16(2 + i * 2, sv[i]);
+                    cTX->Data[38] = (UINT8)RemoteRampActiveSlot();
                     TxSend();
                     done = 1;
                 }
@@ -377,6 +379,60 @@ static int HandleCommand(void){
                         for(i = 0; i < 18; i++) sv[i] = cRX->Data[3 + i * 2] | (cRX->Data[4 + i * 2] << 8);
                         cTX->Data[0] = RemoteRampStepsSet(cRX->Data[2], sv);
                     }
+                    TxSend();
+                    done = 1;
+                }
+                break;
+            case 0x58: //read a stored profile [slot 0-9]; replies [slot, status 0 ok/1 empty/2 bad slot, name 10 characters (0 padded), number of steps,
+                       //6 x (u16 temperature C, u16 rate 0.1 C/s, u16 hold 0.1 s)]
+                if(!TxBusy()){
+                    char nm[11];
+                    unsigned int cnt, sv[18];
+                    int i, sl = cRX->Data[0];
+                    cTX->Command = 0x58;
+                    cTX->Data[0] = (UINT8)sl;
+                    cTX->Data[1] = (UINT8)RemoteRampSlotRead(sl, nm, &cnt, sv);
+                    for(i = 0; i < 10; i++) cTX->Data[2 + i] = (UINT8)nm[i];
+                    cTX->Data[12] = (UINT8)cnt;
+                    for(i = 0; i < 18; i++) Put16(13 + i * 2, sv[i]);
+                    TxSend();
+                    done = 1;
+                }
+                break;
+            case 0x59: //store a profile [key 0x5A 0xA5, slot 0-9, name 10 characters (0 padded), number of steps, 6 x (u16 C, u16 0.1 C/s, u16 0.1 s)];
+                       //replies [status 0 ok, 1 bad key, 2 bad slot or values]
+                if(!TxBusy()){
+                    char nm[11];
+                    unsigned int sv[18];
+                    int i;
+                    cTX->Command = 0x59;
+                    if(cRX->Data[0] != REMOTE_KEY0 || cRX->Data[1] != REMOTE_KEY1){
+                        cTX->Data[0] = 1;
+                    }
+                    else{
+                        for(i = 0; i < 10; i++) nm[i] = (char)cRX->Data[3 + i];
+                        nm[10] = 0;
+                        for(i = 0; i < 18; i++) sv[i] = cRX->Data[14 + i * 2] | (cRX->Data[15 + i * 2] << 8);
+                        cTX->Data[0] = (UINT8)RemoteRampSlotWrite(cRX->Data[2], nm, cRX->Data[13], sv);
+                    }
+                    TxSend();
+                    done = 1;
+                }
+                break;
+            case 0x5A: //delete a stored profile [key 0x5A 0xA5, slot]; replies [status 0 ok, 1 bad key, 2 bad slot]
+                if(!TxBusy()){
+                    cTX->Command = 0x5A;
+                    if(cRX->Data[0] != REMOTE_KEY0 || cRX->Data[1] != REMOTE_KEY1) cTX->Data[0] = 1;
+                    else cTX->Data[0] = (UINT8)RemoteRampSlotDelete(cRX->Data[2]);
+                    TxSend();
+                    done = 1;
+                }
+                break;
+            case 0x5B: //load a stored profile as the active steps [slot]; replies [status 0 ok, 1 empty, 2 bad slot or not valid with the station's values
+                       //(maximum rate, idle, ready limit), 3 a profile is running]
+                if(!TxBusy()){
+                    cTX->Command = 0x5B;
+                    cTX->Data[0] = (UINT8)RemoteRampSlotLoad(cRX->Data[0]);
                     TxSend();
                     done = 1;
                 }

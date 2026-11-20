@@ -57,6 +57,11 @@ extern int RemoteRampControl(int cmd);                 /*0 leave, 1 enter, 2 tri
 extern void RemoteRampStatus(unsigned int * o);        /*9 values: state, ms left, target, highest temperature, ready, actual, step, lift start, delay ms left*/
 extern void RemoteRampStepsGet(unsigned int * s);      /*6 x (temperature, rate 0.1 C/s, hold 0.1 s)*/
 extern int RemoteRampStepsSet(int count, const unsigned int * s); /*0 done, 2 out of range, 3 a profile is running*/
+extern int RemoteRampSlotRead(int slot, char * name, unsigned int * count, unsigned int * s); /*0 ok, 1 empty, 2 bad slot; name 10 characters + 0*/
+extern int RemoteRampSlotWrite(int slot, const char * name, int count, const unsigned int * s); /*0 ok, 2 bad*/
+extern int RemoteRampSlotDelete(int slot);              /*0 ok, 2 bad slot*/
+extern int RemoteRampSlotLoad(int slot);                /*0 ok, 1 empty, 2 bad or not valid, 3 a profile is running*/
+extern unsigned int RemoteRampActiveSlot(void);         /*0-9, 0xFF = none*/
 
 extern void MenuInit();
 extern void MenuTasks(int powerLost);
