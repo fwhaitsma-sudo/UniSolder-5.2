@@ -29,9 +29,7 @@ import java.util.concurrent.ExecutorService
 class ControlPage(private val act: Activity, private val link: DeviceLink, private val io: ExecutorService) {
     val view: View
     private val settings = SettingsPage(act, link, io)
-    private val profiles = ProfilesPage(act, link, io)
     private val ramp = RampPage(act, link, io)
-    private val profilesButton: Button
     private val settingsButton: Button
     private val ui = Handler(Looper.getMainLooper())
 
@@ -169,11 +167,6 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
         settingsButton.setOnClickListener { openSettings(true) }
         col.addView(settingsButton, LinearLayout.LayoutParams(MATCH_P, WRAP_P).also { it.topMargin = dp(16) })
 
-        profilesButton = Button(act)
-        profilesButton.text = "Soldering profiles"
-        profilesButton.setOnClickListener { profiles.view.visibility = View.VISIBLE; profiles.showListNow() }
-        col.addView(profilesButton, LinearLayout.LayoutParams(MATCH_P, WRAP_P).also { it.topMargin = dp(8) })
-
         val rampButton = Button(act)
         rampButton.text = "Ramp mode"
         rampButton.setOnClickListener { ramp.view.visibility = View.VISIBLE; ramp.setVisible(true) }
@@ -200,17 +193,12 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
         val frame = android.widget.FrameLayout(act)
         frame.addView(scroll, ViewGroup.LayoutParams(MATCH_P, MATCH_P))
         frame.addView(settings.view, ViewGroup.LayoutParams(MATCH_P, MATCH_P))
-        frame.addView(profiles.view, ViewGroup.LayoutParams(MATCH_P, MATCH_P))
         frame.addView(ramp.view, ViewGroup.LayoutParams(MATCH_P, MATCH_P))
         settings.view.visibility = View.GONE
-        profiles.view.visibility = View.GONE
         ramp.view.visibility = View.GONE
         settings.onBack = { openSettings(false) }
-        profiles.onBack = { profiles.view.visibility = View.GONE }
-        profiles.protocol = { info?.protocol ?: 0 }
         ramp.protocol = { info?.protocol ?: 0 }
         ramp.onBack = { ramp.view.visibility = View.GONE; ramp.setVisible(false) }
-        profiles.onRunChanged = { n -> profilesButton.text = if (n == null) "Soldering profiles" else "Soldering profiles (running: " + n + ")" }
         view = frame
         enableControls(false)
         showInfo()
@@ -228,7 +216,6 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
         info = null
         state = null
         showInfo()
-        profiles.refresh()
         io.execute {
             val i = link.appInfo()
             val s = if (i != null && i.protocol >= 1) link.getState() else null
@@ -247,10 +234,6 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
             ramp.setVisible(false)
             return true
         }
-        if (profiles.view.visibility == View.VISIBLE) {
-            profiles.view.visibility = View.GONE
-            return true
-        }
         if (settings.view.visibility != View.VISIBLE) return false
         openSettings(false)
         return true
@@ -262,15 +245,8 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
         if (open) settings.reload()
     }
 
-    /** measured tip temperature, for the profiles that wait for it */
-    fun onTemp(t: Float) {
-        profiles.onTemp(t)
-    }
-
     fun onDisconnected() {
         ramp.onDisconnected()
-        profiles.onDisconnected()
-        profiles.refresh()
         settings.onDisconnected()
         openSettings(false)
         info = null
