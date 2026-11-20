@@ -17,6 +17,11 @@ namespace UniSolder
         int CPoint = 0;
 
         private UniSolderComm lUniSolder = null;
+        private SSComm.USBHID usb;
+        private SSComm.BtSerial bt;
+        private DateTime btNext = DateTime.MinValue;     //next Bluetooth attempt (a failed one is repeated every 8 seconds)
+        private bool btBusy;       //a Bluetooth connection attempt is running on a worker thread
+        private MoreTab moreTab;
         private UniSolderComm.PID PID = null;
 
         private System.Windows.Forms.Timer ConnectionTimer;
@@ -31,7 +36,9 @@ namespace UniSolder
             lUniSolder = new UniSolderComm();
             lUniSolder.InstrumentChange += InstrumentChange;
             lUniSolder.LiveDataReceived += LiveDataReceived;
-            lUniSolder.Transport = new SSComm.USBHID { DevVID = 0x4d8, DevPID = 0x3c };
+            usb = new SSComm.USBHID { DevVID = 0x4d8, DevPID = 0x3c };
+            bt = new SSComm.BtSerial();
+            lUniSolder.Transport = usb;
 
             BuildTabs();
 
@@ -155,7 +162,10 @@ namespace UniSolder
             dashButton.Click += (s, e) => toolsTab.ShowDashboard();
             toolsTab.RecordingChanged += on => recButton.Text = on ? "Stop rec." : "Record";
 
-            pages = new Control[] { live, controlTab, pid, toolsTab, firmware };
+            moreTab = new MoreTab();
+            moreTab.BluetoothSaved += ApplyBluetoothSettings;
+            ApplyBluetoothSettings();
+            pages = new Control[] { live, controlTab, pid, toolsTab, firmware, moreTab };
             var host = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Bg };
             foreach (var p in pages)
             {
@@ -163,7 +173,7 @@ namespace UniSolder
                 p.Visible = false;
                 host.Controls.Add(p);
             }
-            nav = new PillNav(new[] { "Live", "Control", "PID", "Tools", "Firmware" });
+            nav = new PillNav(new[] { "Live", "Control", "PID", "Tools", "Firmware", "More" });
             nav.PageSelected += ShowPage;
             Controls.Add(nav);
             Controls.Add(host);
@@ -180,12 +190,60 @@ namespace UniSolder
             if (pages[index] == toolsTab) toolsTab.RefreshSessions();
         }
 
+        /// <summary>Takes the saved Bluetooth settings; a changed PIN or port allows a new attempt after a rejected PIN.</summary>
+        private void ApplyBluetoothSettings()
+        {
+            bool changed = bt.PortName != moreTab.SavedPort || bt.Pin != moreTab.SavedPin;
+            bt.PortName = moreTab.SavedPort;
+            bt.Pin = moreTab.SavedPin;
+            bt.PinRejected = false;
+            if (btBusy) return;
+            if ((!moreTab.UseBluetooth || changed) && lUniSolder.Transport == bt) bt.Disconnect();
+        }
+
+        private bool UseBluetooth => moreTab != null && moreTab.UseBluetooth && !string.IsNullOrEmpty(bt.PortName);
+
         private void ConnectionTimer_Tick(object sender, EventArgs e)
         {
-            if (!lUniSolder.Transport.Connected)
+            if (!btBusy)
             {
-                if (lUniSolder.Transport.Connect())
+                var t = lUniSolder.Transport;
+                if (!t.Connected)
                 {
+                    //USB first; when there is no cable, Bluetooth (on a worker thread: opening the port and the PIN check take seconds)
+                    if (usb.Connect())
+                    {
+                        lUniSolder.Transport = usb;
+                        InstrumentChange(null, null);
+                    }
+                    else if (UseBluetooth && !bt.PinRejected && DateTime.Now >= btNext)
+                    {
+                        btBusy = true;
+                        lUniSolder.Transport = bt;
+                        System.Threading.Tasks.Task.Run(() =>
+                        {
+                            bool ok = false;
+                            try { ok = bt.Connect(); }
+                            catch (Exception ex) { SSComm.Log.Error("Bluetooth connect failed", ex); }
+                            try
+                            {
+                                BeginInvoke(new Action(() =>
+                                {
+                                    btBusy = false;
+                                    if (!ok) btNext = DateTime.Now.AddSeconds(8);
+                                    if (ok) InstrumentChange(null, null);
+                                    UpdateConnectionStatus();
+                                }));
+                            }
+                            catch (InvalidOperationException) { btBusy = false; }      //window closed
+                        });
+                    }
+                }
+                else if (t == bt && usb.Connect())
+                {
+                    //a USB cable always wins
+                    bt.Disconnect();
+                    lUniSolder.Transport = usb;
                     InstrumentChange(null, null);
                 }
             }
@@ -199,23 +257,39 @@ namespace UniSolder
         {
             //static event: unsubscribe so the log does not call a disposed form
             SSComm.Log.MessageLogged -= Log_MessageLogged;
-            lUniSolder?.Transport?.Dispose();
+            usb?.Dispose();
+            bt?.Dispose();
         }
 
         private void UpdateConnectionStatus()
         {
-            if (!lUniSolder.Transport.Connected)
+            bool viaBt = lUniSolder.Transport == bt;
+            string how = viaBt ? " (Bluetooth)" : "";
+            if (moreTab != null)
             {
-                connStatusLabel.Text = "Not connected";
+                if (!UseBluetooth) moreTab.SetStatus("Bluetooth is off");
+                else if (viaBt && bt.Connected) moreTab.SetStatus("Connected over Bluetooth");
+                else if (btBusy) moreTab.SetStatus("Connecting over Bluetooth...");
+                else if (bt.PinRejected) moreTab.SetStatus("Bluetooth: wrong PIN (change it and save to try again)");
+                else if (usb.Connected) moreTab.SetStatus("Connected over USB (Bluetooth is not needed)");
+                else moreTab.SetStatus("Bluetooth: " + (string.IsNullOrEmpty(bt.LastError) ? "waiting for the bridge" : bt.LastError));
+            }
+            if (btBusy)
+            {
+                connStatusLabel.Text = "Connecting over Bluetooth...";
+            }
+            else if (!lUniSolder.Transport.Connected)
+            {
+                connStatusLabel.Text = viaBt && !string.IsNullOrEmpty(bt.LastError) ? "Bluetooth: " + bt.LastError : "Not connected";
             }
             else if (PID == null)
             {
                 //connected but the PID query failed: typically the device is in bootloader mode
-                connStatusLabel.Text = "Connected - no answer (bootloader?)";
+                connStatusLabel.Text = "Connected" + how + " - no answer (bootloader?)";
             }
             else
             {
-                connStatusLabel.Text = "Connected";
+                connStatusLabel.Text = "Connected" + how;
             }
         }
 
@@ -459,6 +533,11 @@ namespace UniSolder
 
         private void Button3_Click(object sender, EventArgs e)
         {
+            if (lUniSolder.Transport == bt && bt.Connected)
+            {
+                MessageBox.Show("The firmware cannot be updated over Bluetooth. Connect the USB cable and try again.", "UniSolder", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
             var fd = new OpenFileDialog()
             {
                 CheckFileExists = true,

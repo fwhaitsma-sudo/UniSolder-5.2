@@ -63,6 +63,19 @@ namespace UniSolder
             Save();
         }
 
+        public static string GetString(string key, string def)
+        {
+            Load();
+            return values.TryGetValue(key, out var v) ? v : def;
+        }
+
+        public static void PutString(string key, string v)
+        {
+            Load();
+            values[key] = (v ?? "").Replace("\r", "").Replace("\n", "");
+            Save();
+        }
+
         public static float GetFloat(string key, float def)
         {
             Load();
