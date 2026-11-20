@@ -39,9 +39,9 @@ static const UINT16 RampMin[RAMP_NPAR] = {100, 110,   5,   0,  0,  1,  3,  2, 11
 static const UINT16 RampMax[RAMP_NPAR] = {340, 350, 100, 100, 60, 60, 40, 20, 340, 50, 10, 200, 1, 100, 1000, RAMP_NSTEP};
 
 //profile steps: temperature C, rate 0.1 C/s, hold 0.1 s. Default (tin-lead, Kyocera AVX TCJ D-case, design note 2.7):
-//preheat 190 C at 2 C/s, soak 20 s; reflow 240 C at 2 C/s, peak 5 s.
+//preheat 190 C at 2 C/s, soak 20 s; reflow 250 C at 2 C/s, peak 5 s (240 until 2026-11-20: a ground plane was molten for only about 8 s).
 static UINT16 RampS[RAMP_NSTEP][3];
-static const UINT16 RampSDef[RAMP_NSTEP][3] = {{190, 20, 200}, {240, 20, 50}, {250, 20, 0}, {250, 20, 0}, {250, 20, 0}, {250, 20, 0}};
+static const UINT16 RampSDef[RAMP_NSTEP][3] = {{190, 20, 200}, {250, 20, 50}, {250, 20, 0}, {250, 20, 0}, {250, 20, 0}, {250, 20, 0}};
 
 static UINT8 RampSt;            //RS_OFF = classic station
 static UINT8 RampLoaded;

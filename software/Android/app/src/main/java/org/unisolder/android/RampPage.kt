@@ -172,7 +172,7 @@ class RampPage(private val act: Activity, private val link: DeviceLink, private 
         addField(profileBox, "Maximum rate (°C per second)", 14, "0.5-100, default 4, one decimal. No step may ramp faster than this.", decimal = true)
         val pi = TextView(act)
         pi.text = "Each step ramps from the previous step's temperature to its own at its rate, then holds it. After the last step the heater goes back to idle. " +
-            "Default (tin-lead, Kyocera AVX TCJ D-case): step 1 190 °C at 2 °C/s, hold 20 s; step 2 240 °C at 2 °C/s, hold 5 s (about 65 s in all)."
+            "Default (tin-lead, Kyocera AVX TCJ D-case): step 1 190 °C at 2 °C/s, hold 20 s; step 2 250 °C at 2 °C/s, hold 5 s (about 68 s in all)."
         pi.setTextColor(text)
         pi.setPadding(0, dp(10), 0, 0)
         profileBox.addView(pi)
