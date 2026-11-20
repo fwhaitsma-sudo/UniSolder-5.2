@@ -373,7 +373,7 @@ static int HandleCommand(void){
                     int f = cRX->Data[0] | (cRX->Data[1] << 8);
                     cTX->Command = 0x55;
                     Put16(0, f);
-                    cTX->Data[2] = (UINT8)RemoteRampCaptureRead(f, 7, &cTX->Data[3]);
+                    cTX->Data[2] = (UINT8)RemoteRampCaptureRead(f, 7, (unsigned char *)&cTX->Data[3]);
                     TxSend();
                     done = 1;
                 }
