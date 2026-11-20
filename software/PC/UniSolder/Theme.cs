@@ -164,10 +164,16 @@ namespace UniSolder
         private bool hover, down;
 
         /// <summary>The main action: yellow with black text.</summary>
+        [System.ComponentModel.Browsable(false)]
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
         public bool Strong { get; set; }
         /// <summary>A button of the page bar.</summary>
+        [System.ComponentModel.Browsable(false)]
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
         public bool Nav { get; set; }
         /// <summary>The page bar button of the page that is shown.</summary>
+        [System.ComponentModel.Browsable(false)]
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
         public bool Selected { get; set; }
 
         public ThemedButton()
