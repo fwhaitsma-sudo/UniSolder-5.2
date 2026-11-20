@@ -45,7 +45,9 @@ class RampStatus(val state: Int, val ready: Boolean, val msLeft: Int, val target
                  /** protocol 8: contact detector. k in 0.001/s, ripple %, flags (1 cooling detector armed, 2 duty detector armed, 4 contact,
                   *  8 blank after lift, 16 wipe ignored), last automatic event (1 start by cooling, 2 start by duty, 3 wipe ignored) */
                  val k: Int = 0, val ripple: Int = 0, val flags: Int = 0, val lastEvent: Int = 0,
-                 val autoStarts: Int = 0, val wipes: Int = 0, val room2: Int = 0)
+                 val autoStarts: Int = 0, val wipes: Int = 0, val room2: Int = 0,
+                 /** protocol 9: profile step (1 based, 0 = not running), lift start (0 none, 1 counting the delay, 2 waiting until ready), ms left of the delay */
+                 val step: Int = 0, val lift: Int = 0, val liftMs: Int = 0)
 
 /** Ramp capture state (protocol 8, command 0x54). */
 class RampCaptureInfo(val state: Int, val reason: Int, val records: Int, val eventIndex: Int, val room2: Int)
@@ -725,7 +727,29 @@ class DeviceLink(private val ctx: Context) {
     fun rampStatus(): RampStatus? {
         val r = send(byteArrayOf(CMD_RAMP_STATUS), 1000) ?: return null
         return RampStatus(r.u(0), r.u(1) != 0, r.u16(2), r.u16(4), r.u16(6), r.u16(8),
-            r.u16(10), r.u16(12), r.u(14), r.u(15), r.u16(16), r.u16(18), r.u16(20))
+            r.u16(10), r.u16(12), r.u(14), r.u(15), r.u16(16), r.u16(18), r.u16(20),
+            r.u(22), r.u(23), r.u16(24))
+    }
+
+    /** Profile steps (protocol 9): Pair(number of steps, 6 x (temperature C, rate 0.1 C/s, hold 0.1 s)). */
+    fun getRampSteps(): Pair<Int, IntArray>? {
+        val r = send(byteArrayOf(CMD_RAMP_STEPS_GET), 1000) ?: return null
+        if (r.u(0) != 0) return null
+        return Pair(r.u(1), IntArray(RAMP_STEPS * 3) { r.u16(2 + it * 2) })
+    }
+
+    /** 0 done, 1 bad key, 2 out of range, 3 a profile is running, null no answer. s = 6 x 3 values. */
+    fun setRampSteps(count: Int, s: IntArray): Int? {
+        val b = ByteArray(4 + RAMP_STEPS * 6)
+        b[0] = CMD_RAMP_STEPS_SET
+        b[1] = 0x5A
+        b[2] = 0xA5.toByte()
+        b[3] = count.toByte()
+        for (i in 0 until RAMP_STEPS * 3) {
+            b[4 + i * 2] = (s[i] and 255).toByte()
+            b[5 + i * 2] = ((s[i] shr 8) and 255).toByte()
+        }
+        return send(b, 3000)?.u(0)
     }
 
     /** Ramp capture (protocol 8): cmd 0 status, 1 clear and record again, 2 freeze now. */
@@ -772,6 +796,10 @@ class DeviceLink(private val ctx: Context) {
         const val CMD_PID_SLOT_WRITE: Byte = 0x45
         const val RAMP_PARS = 9
         const val RAMP_PARS8 = 13
+        const val RAMP_PARS9 = 16
+        const val RAMP_STEPS = 6
+        const val CMD_RAMP_STEPS_GET: Byte = 0x56
+        const val CMD_RAMP_STEPS_SET: Byte = 0x57
         const val CMD_RAMP_CAPTURE: Byte = 0x54
         const val CMD_RAMP_CAPTURE_READ: Byte = 0x55
         const val CMD_RAMP_GET: Byte = 0x50

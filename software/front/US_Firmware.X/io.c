@@ -124,13 +124,13 @@ static int HandleCommand(void){
                     done = 1;
                 }
                 break;
-            case 0x80: //application info: [version minor, version major, board version, protocol (1 = remote control + settings, 2 = PID save, 3 = live settings 0x40/0x41, 4 = name 0x42/0x43, 5 = saved PID backup 0x44/0x45, 6 = state flag 32: iron in its stand now, 7 = ramp mode 0x50-0x53, state flag 64, 8 = 13 ramp values, contact detector in 0x53, capture 0x54/0x55)]
+            case 0x80: //application info: [version minor, version major, board version, protocol (1 = remote control + settings, 2 = PID save, 3 = live settings 0x40/0x41, 4 = name 0x42/0x43, 5 = saved PID backup 0x44/0x45, 6 = state flag 32: iron in its stand now, 7 = ramp mode 0x50-0x53, state flag 64, 8 = 13 ramp values, contact detector in 0x53, capture 0x54/0x55, 9 = 16 ramp values, profile steps 0x56/0x57, step + lift start in 0x53)]
                 if(!TxBusy()){
                     cTX->Command = 0x80;
                     cTX->Data[0] = VERSION_MINOR;
                     cTX->Data[1] = VERSION_MAJOR;
                     cTX->Data[2] = BoardVersion;
-                    cTX->Data[3] = 8;
+                    cTX->Data[3] = 9;
                     TxSend();
                     done = 1;
                 }
@@ -286,29 +286,30 @@ static int HandleCommand(void){
                 }
                 break;
             case 0x50: //read the ramp mode parameters; replies [status 0, 13 x u16: idle C, peak C, rate C/s, dwell 0.1 s, lockout s, time-out min, duty jump %, dip 0.5 C, ready limit C,
-                       //cooling constant 0.001/s, blank after lift s, wipe ripple %, auto start 0/1/2] (protocol 7 apps read the first 9)
+                       //cooling constant 0.001/s, blank after lift s, wipe ripple %, start 0 knob/1 lift/2 contact/3 contact + power, start delay 0.1 s,
+                       //maximum rate 0.1 C/s, number of steps] (protocol 7 apps read the first 9, protocol 8 apps the first 13)
                 if(!TxBusy()){
-                    unsigned int rv[13];
+                    unsigned int rv[16];
                     int i;
                     RemoteRampGet(rv);
                     cTX->Command = 0x50;
                     cTX->Data[0] = 0;
-                    for(i = 0; i < 13; i++) Put16(1 + i * 2, rv[i]);
+                    for(i = 0; i < 16; i++) Put16(1 + i * 2, rv[i]);
                     TxSend();
                     done = 1;
                 }
                 break;
-            case 0x51: //set the ramp mode parameters [key 0x5A 0xA5, 13 x u16]; replies [status 0 ok, 1 bad key, 2 out of range, 3 a ramp is running]
-                       //(values 10-13 all 0 = a protocol 7 app sending 9 values: the contact values are kept)
+            case 0x51: //set the ramp mode parameters [key 0x5A 0xA5, 16 x u16]; replies [status 0 ok, 1 bad key, 2 out of range, 3 a profile is running]
+                       //(values 10-13 all 0 = a protocol 7 app, values 15-16 both 0 = a protocol 8 app: the newer values are kept)
                 if(!TxBusy()){
-                    unsigned int rv[13];
+                    unsigned int rv[16];
                     int i;
                     cTX->Command = 0x51;
                     if(cRX->Data[0] != REMOTE_KEY0 || cRX->Data[1] != REMOTE_KEY1){
                         cTX->Data[0] = 1;
                     }
                     else{
-                        for(i = 0; i < 13; i++) rv[i] = cRX->Data[2 + i * 2] | (cRX->Data[3 + i * 2] << 8);
+                        for(i = 0; i < 16; i++) rv[i] = cRX->Data[2 + i * 2] | (cRX->Data[3 + i * 2] << 8);
                         cTX->Data[0] = RemoteRampSet(rv);
                     }
                     TxSend();
@@ -317,7 +318,7 @@ static int HandleCommand(void){
                 break;
             case 0x52: //ramp mode control [0 leave, 1 enter, 2 trigger, 3 abort]; replies [status 0 done / 1 not possible / 3 in menu, state]
                 if(!TxBusy()){
-                    unsigned int ro[6];
+                    unsigned int ro[9];
                     cTX->Command = 0x52;
                     cTX->Data[0] = RemoteRampControl(cRX->Data[0]);
                     RemoteRampStatus(ro);
@@ -328,9 +329,10 @@ static int HandleCommand(void){
                 break;
             case 0x53: //ramp mode status; replies [state 0 off/1 idle/2 ramp/3 peak/4 cool/5 lockout, ready, u16 ms left, u16 target C, u16 highest temperature C, u16 actual C,
                        //(protocol 8) u16 k 0.001/s, u16 wipe ripple %, flags (1 A armed, 2 B armed, 4 contact, 8 lift blank, 16 wipe hold), last event (1 A, 2 B, 3 wipe),
-                       //u16 automatic starts, u16 wipes ignored, u16 room 0.5 C]
+                       //u16 automatic starts, u16 wipes ignored, u16 room 0.5 C, (protocol 9) step 1-6 (0 = not running), lift start 0 none/1 delay/2 waiting
+                       //until ready, u16 ms left of the start delay] (while running, u16 ms left = the whole profile)
                 if(!TxBusy()){
-                    unsigned int ro[6];
+                    unsigned int ro[9];
                     unsigned int rd[7];
                     RemoteRampStatus(ro);
                     RemoteRampDetect(rd);
@@ -341,6 +343,9 @@ static int HandleCommand(void){
                     Put16(16, rd[4]);
                     Put16(18, rd[5]);
                     Put16(20, rd[6]);
+                    cTX->Data[22] = ro[6];
+                    cTX->Data[23] = ro[7];
+                    Put16(24, ro[8]);
                     cTX->Command = 0x53;
                     cTX->Data[0] = ro[0];
                     cTX->Data[1] = ro[4];
@@ -374,6 +379,38 @@ static int HandleCommand(void){
                     cTX->Command = 0x55;
                     Put16(0, f);
                     cTX->Data[2] = (UINT8)RemoteRampCaptureRead(f, 7, (unsigned char *)&cTX->Data[3]);
+                    TxSend();
+                    done = 1;
+                }
+                break;
+            case 0x56: //read the profile steps; replies [status 0, number of steps, 6 x (u16 temperature C, u16 rate 0.1 C/s, u16 hold 0.1 s)]
+                if(!TxBusy()){
+                    unsigned int sv[18];
+                    unsigned int pv[16];
+                    int i;
+                    RemoteRampStepsGet(sv);
+                    RemoteRampGet(pv);
+                    cTX->Command = 0x56;
+                    cTX->Data[0] = 0;
+                    cTX->Data[1] = pv[15];
+                    for(i = 0; i < 18; i++) Put16(2 + i * 2, sv[i]);
+                    TxSend();
+                    done = 1;
+                }
+                break;
+            case 0x57: //set the profile steps [key 0x5A 0xA5, number of steps, 6 x (u16 temperature C, u16 rate 0.1 C/s, u16 hold 0.1 s)];
+                       //replies [status 0 ok, 1 bad key, 2 out of range, 3 a profile is running]
+                if(!TxBusy()){
+                    unsigned int sv[18];
+                    int i;
+                    cTX->Command = 0x57;
+                    if(cRX->Data[0] != REMOTE_KEY0 || cRX->Data[1] != REMOTE_KEY1){
+                        cTX->Data[0] = 1;
+                    }
+                    else{
+                        for(i = 0; i < 18; i++) sv[i] = cRX->Data[3 + i * 2] | (cRX->Data[4 + i * 2] << 8);
+                        cTX->Data[0] = RemoteRampStepsSet(cRX->Data[2], sv);
+                    }
                     TxSend();
                     done = 1;
                 }

@@ -21,7 +21,7 @@ int main(int argc, char **argv){
     char line[256]; FILE *f = fopen(argv[1], "r"); int t, i = 0, prev = 0;
     fgets(line, 256, f);
     while(fgets(line, 256, f)){ double x[9]; if(sscanf(line, "%lf,%lf,%lf,%lf", &x[0],&x[1],&x[2],&x[3])==4){ tt[n]=x[0]; aa[n]=x[2]; pp[n]=x[3]; n++; } }
-    { int q; static double b2[400]; for(q=1;q<n-1;q++) b2[q]=(aa[q-1]+aa[q]+aa[q+1])/3; for(q=1;q<n-1;q++) aa[q]=b2[q]; } RampLoad(); RampSt = RS_IDLE; srand(1);
+    { int q; static double b2[400]; for(q=1;q<n-1;q++) b2[q]=(aa[q-1]+aa[q]+aa[q+1])/3; for(q=1;q<n-1;q++) aa[q]=b2[q]; } RampLoad(); RampP[12] = 2; RampSt = RS_IDLE; srand(1);
     for(t = 0; t*0.02 < tt[n-1]; t++){
         double sec = t*0.02, T, P;
         while(i < n-2 && tt[i+1] <= sec) i++;

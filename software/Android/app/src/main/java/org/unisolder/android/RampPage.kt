@@ -20,6 +20,8 @@ import java.util.concurrent.ExecutorService
  * lockout by itself. This page sets the values, switches the mode on and off, starts or aborts a ramp and shows the state.
  * The phone is only an editor and a viewer: nothing here has to stay connected for the station to finish a ramp.
  * Protocol 8 adds contact detection (automatic start), its values, the detector status and the 20 ms capture buffer (0x54/0x55).
+ * Protocol 9 replaces the single ramp by a step profile (0x56/0x57) and adds the JBC style start: lift the iron, the profile starts
+ * after the start delay.
  */
 class RampPage(private val act: Activity, private val link: DeviceLink, private val io: ExecutorService) {
     val view: View
@@ -38,6 +40,13 @@ class RampPage(private val act: Activity, private val link: DeviceLink, private 
     private val fieldPar = ArrayList<Int>()     // index in the station's parameter list for each field
     private var pars = IntArray(DeviceLink.RAMP_PARS)          // as read from the station (9 values, 13 with protocol 8)
     private val contactBox = LinearLayout(act)
+    private val legacyBox = LinearLayout(act)           // single ramp values (protocol 7 and 8)
+    private val profileBox = LinearLayout(act)          // start mode, delay, maximum rate and steps (protocol 9)
+    private val autoBox = LinearLayout(act)             // the protocol 8 automatic start field
+    private val stepFields = ArrayList<EditText>()      // 6 x (temperature, rate, hold)
+    private val stepCount = EditText(act)
+    private var stepsLoaded = false
+    private val tenths = HashSet<Int>()                 // fields shown in units of 0.1 (dwell, start delay, maximum rate)
     private val captureBox = LinearLayout(act)
     private val detectText = TextView(act)
     private val captureText = TextView(act)
@@ -114,8 +123,9 @@ class RampPage(private val act: Activity, private val link: DeviceLink, private 
         col.addView(title)
 
         val intro = TextView(act)
-        intro.text = "In ramp mode the station holds the idle temperature and runs the ramp by itself. " +
-            "Start it with a short press of the knob or with Start below; a press while it heats aborts. " +
+        intro.text = "In ramp mode the station holds the idle temperature and runs the soldering profile by itself. " +
+            "Lift the iron from its stand: the profile starts after the start delay (like JBC's auto-start). " +
+            "A short press of the knob or Start below also starts it; a press while it runs aborts, and so does putting the iron back in its stand. " +
             "The knob, sleep and stand-by do not change the temperature in this mode. After a power cycle the station is a normal station again."
         intro.setTextColor(text)
         col.addView(intro)
@@ -150,18 +160,74 @@ class RampPage(private val act: Activity, private val link: DeviceLink, private 
         head.setPadding(0, dp(20), 0, dp(4))
         col.addView(head)
 
-        addField(col, "Idle temperature (°C)", 0, "100-340, default 165 (below the melting point of Sn62 solder, 179). Held until the ramp starts, also while the iron is in its stand. Ready: up to 10 above it.")
-        addField(col, "Peak temperature (°C)", 1, "At least 10 above idle, 350 at most.")
-        addField(col, "Ramp rate (°C per second)", 2, "5-100. The tip cannot always follow a high rate: check the highest temperature below.")
-        addField(col, "Dwell at the peak (seconds)", 3, "0-10, one decimal.", decimal = true)
-        addField(col, "Lockout after the dwell (seconds)", 4, "0-60, counted from the end of the dwell. No new ramp can start in this time. The tip cools by itself.")
-        addField(col, "Ready up to (°C)", 8, "At least 10 above idle and at most 10 below the peak. A new ramp can start when the tip is not hotter than this, and then starts from the tip's temperature.")
+        addField(col, "Idle temperature (°C)", 0, "100-340, default 165 (below the melting point of Sn62 solder, 179). Held until the profile starts, also while the iron is in its stand.")
+        legacyBox.orientation = LinearLayout.VERTICAL
+        addField(legacyBox, "Peak temperature (°C)", 1, "At least 10 above idle, 350 at most.")
+        addField(legacyBox, "Ramp rate (°C per second)", 2, "5-100. The tip cannot always follow a high rate: check the highest temperature below.")
+        addField(legacyBox, "Dwell at the peak (seconds)", 3, "0-10, one decimal.", decimal = true)
+        col.addView(legacyBox)
+        addField(col, "Lockout after the profile (seconds)", 4, "0-60, default 5, counted from the end of the profile. No new profile can start in this time.")
+        addField(col, "Ready up to (°C)", 8, "Default 200. At least 10 above idle and at most 10 below the highest step. A profile can start when the tip is not hotter than this (the station shows WAIT until then), and then starts from the tip's temperature.")
         addField(col, "Time-out when idle (minutes)", 5, "1-60. After this time without use the station leaves ramp mode.")
+
+        // ---- profile (protocol 9) ----
+        profileBox.orientation = LinearLayout.VERTICAL
+        val ph = TextView(act)
+        ph.text = "Start and profile"
+        ph.textSize = 18f
+        ph.setTextColor(if (dark) yellow else 0xFF9A7000.toInt())
+        ph.setPadding(0, dp(20), 0, dp(4))
+        profileBox.addView(ph)
+        addField(profileBox, "Start (0-3)", 12, "1 = lift the iron from its stand, the profile starts after the start delay (default; needs the stand sensor, HOLDER on or auto). 0 = knob or app only. 2, 3 = pad contact (experimental, not reliable).")
+        addField(profileBox, "Start delay after lifting (seconds)", 13, "0-10, default 3, one decimal. Time to wipe the tip and put it on the pad.", decimal = true)
+        addField(profileBox, "Maximum rate (°C per second)", 14, "0.5-100, default 4, one decimal. No step may ramp faster than this.", decimal = true)
+        val pi = TextView(act)
+        pi.text = "Each step ramps from the previous step's temperature to its own at its rate, then holds it. After the last step the heater goes back to idle. " +
+            "Default (tin-lead, Kyocera AVX TCJ D-case): step 1 190 °C at 2 °C/s, hold 20 s; step 2 240 °C at 2 °C/s, hold 5 s (about 65 s in all)."
+        pi.setTextColor(text)
+        pi.setPadding(0, dp(10), 0, 0)
+        profileBox.addView(pi)
+        val cl = TextView(act)
+        cl.text = "Number of steps (1-6)"
+        cl.setTextColor(text)
+        cl.setPadding(0, dp(10), 0, 0)
+        profileBox.addView(cl)
+        stepCount.inputType = InputType.TYPE_CLASS_NUMBER
+        stepCount.setTextColor(text)
+        profileBox.addView(stepCount, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        val hdr = LinearLayout(act)
+        hdr.orientation = LinearLayout.HORIZONTAL
+        for (t in listOf("Step", "°C", "°C/s", "Hold s")) {
+            val tv = TextView(act)
+            tv.text = t
+            tv.setTextColor(text)
+            hdr.addView(tv, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, if (t == "Step") 0.6f else 1f))
+        }
+        hdr.setPadding(0, dp(8), 0, 0)
+        profileBox.addView(hdr)
+        for (k in 0 until DeviceLink.RAMP_STEPS) {
+            val row = LinearLayout(act)
+            row.orientation = LinearLayout.HORIZONTAL
+            row.gravity = Gravity.CENTER_VERTICAL
+            val n = TextView(act)
+            n.text = (k + 1).toString()
+            n.setTextColor(text)
+            row.addView(n, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 0.6f))
+            for (j in 0 until 3) {
+                val e = EditText(act)
+                e.inputType = if (j == 0) InputType.TYPE_CLASS_NUMBER else InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+                e.setTextColor(text)
+                stepFields.add(e)
+                row.addView(e, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            }
+            profileBox.addView(row)
+        }
+        col.addView(profileBox)
 
         // ---- contact detection (protocol 8) ----
         contactBox.orientation = LinearLayout.VERTICAL
         val ch = TextView(act)
-        ch.text = "Automatic start (pad contact)"
+        ch.text = "Pad contact start (experimental)"
         ch.textSize = 18f
         ch.setTextColor(if (dark) yellow else 0xFF9A7000.toInt())
         ch.setPadding(0, dp(20), 0, dp(4))
@@ -173,12 +239,14 @@ class RampPage(private val act: Activity, private val link: DeviceLink, private 
             "Contact in the first seconds after lifting the iron from its stand is taken as the brass wool wipe and ignored until it ends."
         ci.setTextColor(text)
         contactBox.addView(ci)
-        addField(contactBox, "Automatic start (0, 1 or 2)", 12, "0 = off (knob or Start only), 1 = on, by the cooling of the tip (default), 2 = also by the heater power when the tip is held at idle (weak signal for small pads).")
+        autoBox.orientation = LinearLayout.VERTICAL
+        addField(autoBox, "Automatic start (0, 1 or 2)", 12, "0 = off (knob or Start only), 1 = on, by the cooling of the tip (default), 2 = also by the heater power when the tip is held at idle (weak signal for small pads).")
+        contactBox.addView(autoBox)
         addField(contactBox, "Contact: cooling constant (× 0.001 per second)", 9, "5-50, default 16. Free cooling measured 8-11, pad contact 21-25 (C245).")
         addField(contactBox, "Blank after lifting the iron (seconds)", 10, "0-10, default 3. Contact in this time after the iron leaves its stand is the wipe and is ignored until it ends. Needs the stand sensor (HOLDER on or auto).")
         addField(contactBox, "Wipe check: ripple (%)", 11, "0-200, default 30, 0 = off. A brass wool wipe is a series of strokes: the cooling rate jumps up and down. A contact with more ripple than this is ignored as a wipe. First guess: set it from captures.")
-        addField(contactBox, "Duty detector: power jump (%)", 6, "3-40, default 5. Only with automatic start 2.")
-        addField(contactBox, "Duty detector: temperature dip (× 0.5 °C)", 7, "2-20, default 3. Only with automatic start 2.")
+        addField(contactBox, "Duty detector: power jump (%)", 6, "3-40, default 5. Only with start 3 (automatic start 2 on older firmware).")
+        addField(contactBox, "Duty detector: temperature dip (× 0.5 °C)", 7, "2-20, default 3. Only with start 3 (automatic start 2 on older firmware).")
         detectText.setTextColor(text)
         detectText.setPadding(0, dp(8), 0, 0)
         contactBox.addView(detectText)
@@ -236,6 +304,7 @@ class RampPage(private val act: Activity, private val link: DeviceLink, private 
         e.inputType = if (decimal) InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL else InputType.TYPE_CLASS_NUMBER
         e.setTextColor(text)
         e.tag = if (decimal) "dec" else "int"
+        if (decimal) tenths.add(index)
         fields.add(e)
         fieldPar.add(index)
         col.addView(e, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
@@ -257,7 +326,13 @@ class RampPage(private val act: Activity, private val link: DeviceLink, private 
         saveButton.isEnabled = ok
         for (f in fields) f.isEnabled = ok
         val p8 = link.connected && protocol() >= 8
+        val p9 = link.connected && protocol() >= 9
         contactBox.visibility = if (p8) View.VISIBLE else View.GONE
+        legacyBox.visibility = if (p9) View.GONE else View.VISIBLE
+        profileBox.visibility = if (p9) View.VISIBLE else View.GONE
+        autoBox.visibility = if (p9) View.GONE else View.VISIBLE
+        stepCount.isEnabled = p9
+        for (f in stepFields) f.isEnabled = p9
         captureBox.visibility = if (p8) View.VISIBLE else View.GONE
         captureArm.isEnabled = p8 && !captureBusy
         captureFreeze.isEnabled = p8 && !captureBusy
@@ -286,7 +361,8 @@ class RampPage(private val act: Activity, private val link: DeviceLink, private 
 
     private fun loadPars() {
         io.execute {
-            val p = link.getRampPars(if (protocol() >= 8) DeviceLink.RAMP_PARS8 else DeviceLink.RAMP_PARS)
+            val p = link.getRampPars(if (protocol() >= 9) DeviceLink.RAMP_PARS9 else if (protocol() >= 8) DeviceLink.RAMP_PARS8 else DeviceLink.RAMP_PARS)
+            val steps = if (protocol() >= 9) link.getRampSteps() else null
             val s = link.rampStatus()
             ui.post {
                 if (p != null) {
@@ -295,9 +371,10 @@ class RampPage(private val act: Activity, private val link: DeviceLink, private 
                     for ((i, f) in fields.withIndex()) {
                         val k = fieldPar[i]
                         if (k >= p.size) continue
-                        f.setText(if (k == 3) String.format(java.util.Locale.US, "%.1f", p[3] / 10.0) else p[k].toString())
+                        f.setText(if (k in tenths) String.format(java.util.Locale.US, "%.1f", p[k] / 10.0) else p[k].toString())
                     }
                 }
+                if (steps != null) showSteps(steps.first, steps.second)
                 if (s != null) showStatus(s)
             }
         }
@@ -310,24 +387,66 @@ class RampPage(private val act: Activity, private val link: DeviceLink, private 
             for ((i, f) in fields.withIndex()) {
                 val t = f.text.toString().trim().replace(',', '.')
                 val k = fieldPar[i]
-                if (k >= v.size) continue
-                v[k] = if (k == 3) Math.round(t.toDouble() * 10).toInt() else t.toInt()
+                if (k >= v.size || !f.isShown) continue
+                v[k] = if (k in tenths) Math.round(t.toDouble() * 10).toInt() else t.toInt()
             }
         } catch (e: NumberFormatException) {
             Toast.makeText(act, "Check the values", Toast.LENGTH_SHORT).show()
             return
         }
+        var steps: IntArray? = null
+        var count = 0
+        if (protocol() >= 9) {
+            try {
+                count = stepCount.text.toString().trim().toInt()
+                val a = IntArray(DeviceLink.RAMP_STEPS * 3)
+                for ((i, f) in stepFields.withIndex()) {
+                    val t = f.text.toString().trim().replace(',', '.')
+                    a[i] = if (i % 3 == 0) t.toInt() else Math.round(t.toDouble() * 10).toInt()
+                }
+                steps = a
+            } catch (e: NumberFormatException) {
+                Toast.makeText(act, "Check the step values", Toast.LENGTH_SHORT).show()
+                return
+            }
+        }
+        val steps9: IntArray? = steps
+        val count9 = count
         io.execute {
-            val st = link.setRampPars(v)
+            // the station checks the values against the steps and the steps against the values (maximum rate, ready limit):
+            // when one order is refused, the other one is tried
+            var st = link.setRampPars(v)
+            if (steps9 != null) {
+                if (st == 0) st = link.setRampSteps(count9, steps9)
+                else if (st == 2) {
+                    st = link.setRampSteps(count9, steps9)
+                    if (st == 0) st = link.setRampPars(v)
+                }
+            }
             val back = if (st == 0) link.getRampPars(v.size) else null
+            val backSteps = if (st == 0 && steps9 != null) link.getRampSteps() else null
             ui.post {
                 when (st) {
-                    0 -> { if (back != null) pars = back; Toast.makeText(act, "Saved in the station", Toast.LENGTH_SHORT).show() }
-                    2 -> Toast.makeText(act, "A value is out of range (peak at least 10 above idle; ready limit between idle + 10 and peak - 10)", Toast.LENGTH_LONG).show()
-                    3 -> Toast.makeText(act, "A ramp is running: wait until it is finished", Toast.LENGTH_LONG).show()
+                    0 -> {
+                        if (back != null) pars = back
+                        if (backSteps != null) showSteps(backSteps.first, backSteps.second)
+                        Toast.makeText(act, "Saved in the station", Toast.LENGTH_SHORT).show()
+                    }
+                    2 -> Toast.makeText(act, if (steps9 != null) "A value is out of range: steps 100-350 °C, rate up to the maximum rate, hold up to 600 s; the highest step at least 10 above idle; ready limit between idle + 10 and the highest step - 10"
+                        else "A value is out of range (peak at least 10 above idle; ready limit between idle + 10 and peak - 10)", Toast.LENGTH_LONG).show()
+                    3 -> Toast.makeText(act, "A profile is running: wait until it is finished", Toast.LENGTH_LONG).show()
                     else -> Toast.makeText(act, "The station did not accept the values", Toast.LENGTH_LONG).show()
                 }
             }
+        }
+    }
+
+    private fun showSteps(count: Int, s: IntArray) {
+        stepsLoaded = true
+        stepCount.setText(count.toString())
+        for ((i, f) in stepFields.withIndex()) {
+            f.setText(if (i % 3 == 0) s[i].toString() else String.format(java.util.Locale.US, "%.1f", s[i] / 10.0))
+            f.alpha = if (i / 3 < count) 1f else 0.4f
         }
     }
 
@@ -353,9 +472,15 @@ class RampPage(private val act: Activity, private val link: DeviceLink, private 
         refreshButtons()
         val name = when (s.state) {
             0 -> "Off (normal station)"
-            1 -> if (s.ready) "Ready" else if (s.actual > pars[8]) "Cooling: waiting for the ready limit" else "Heating to the idle temperature"
-            2 -> "Ramping"
-            3 -> "Peak"
+            1 -> when {
+                s.lift == 1 -> "Starting in " + String.format(java.util.Locale.US, "%.1f", s.liftMs / 1000.0) + " s"
+                s.lift == 2 -> "Waiting: the tip is above the ready limit"
+                s.ready -> if (protocol() >= 9 && pars.size > 12 && pars[12] == 1) "Ready: lift the iron to start" else "Ready"
+                s.actual > pars[8] -> "Cooling: waiting for the ready limit"
+                else -> "Heating to the idle temperature"
+            }
+            2 -> if (s.step > 0) "Step " + s.step + ": ramping" else "Ramping"
+            3 -> if (s.step > 0) "Step " + s.step + ": holding" else "Peak"
             4 -> "Lockout"
             5 -> "Lockout"
             else -> "?"

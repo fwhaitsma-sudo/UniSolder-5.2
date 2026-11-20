@@ -21,7 +21,7 @@ int main(int argc, char **argv){
     double T = 275, room = 16.5, dt = 0.02;
     int t, scen = atoi(argv[1]);
     srand(argc>3?atoi(argv[3]):1);
-    RampEnter(); if(argc>2) RampP[11]=atoi(argv[2]);
+    RampEnter(); RampP[12] = 2; RampP[8] = 230; if(argc>2) RampP[11]=atoi(argv[2]);
     RampTick(275, 0, 0, 0, 0);
     for(t = 0; t < 50*60; t++){
         double sec = t*dt, kfree = 0.010, kc = kfree, duty, tgt;

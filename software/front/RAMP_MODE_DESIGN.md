@@ -1,6 +1,6 @@
 # Ramp mode: design note (firmware, step 1 and 2)
 
-Status: step 1 written and tested on hardware (3 tests, 2026-11-19). Step 2b written 2026-11-20 (protocol 8, see 2.6), simulated on the PC, waiting for the hardware test. Branch `remote-control` only.
+Status: step 1 tested on hardware (2026-11-19). Step 2b (contact start, 2.6) tested 2026-11-20: not reliable, kept as an experimental option. 2026-11-20: step profiles with the JBC lift start (2.7, protocol 9) written and simulated, waiting for the hardware test. Branch `remote-control` only.
 
 Decisions by the user (2026-11-19): one ramp + one dwell in version 1; idle temperature applies in the stand; peak maximum 350 C is fine; **no power cap below the existing 130 W limit** (the power cap parameter and the PID.c change were dropped).
 Goal: a separate **ramp mode** in the station. Outside this mode the station behaves exactly as it does today.
@@ -126,6 +126,34 @@ Written in `ramp_core.h` (`RampDetect`), called every 20 ms tick in IDLE and LOC
 - **Capture buffer** (for step 2a at 20 ms): 500 records x 8 bytes (10 s, 4 KB RAM): raw temperature (0.5 C), filtered (1/16 C), duty /255, k, ripple, state + detector flags. Recording in ramp mode; it freezes 2 s after a start (manual or automatic) or an ignored wipe; the app reads it and saves a CSV (time 0 = the event) next to the recordings.
 
 Protocol 8: 0x50/0x51 carry 13 values (a protocol 7 app reads 9; a 9 value write leaves values 10-13 as they are), 0x53 adds k, ripple, flags, last event, counters and the room temperature (bytes 10-21), 0x54 capture control/status [0 status, 1 record again, 2 freeze], 0x55 read records [u16 first] -> [u16 first, n, n x 8 bytes].
+
+### 2.7 Step profiles and the lift start (2026-11-20, protocol 9)
+Hardware tests of 2.6: the contact start worked sometimes, not always. Research (JBC Dynamic Soldering Profiles, JBC Soldering Assistant, Hakko patent US 10,974,335): JBC starts a profile when the tool is lifted from the stand (after a set "start delay") or by a pedal; power-based joint detection exists (JBC Soldering Assistant, Hakko) but only to grade joints at working temperature, not to start heating. DECIDED (user): JBC method, start delay configurable, default 3 s; profiles adapted to the capacitor.
+
+**Capacitor limits (Kyocera AVX tantalum technical summary and application guide):** reflow lead-free: preheat 150 +-15 C for 60-120 s, peak 245 +-5 C, max 2.5 C/s, max 40 s above 230 C; SnPb: preheat 150 +-15 C for 60-90 s, peak 220 +-5 C, max 2 C/s, max 60 s above the solder melting point; hand soldering: tip max 370 C, max 3 s, but TCJ is "not dedicated to hand soldering" (no approved hand method). JBC publishes no profile values; its profiles are slow (screen shows about 1.5 min) and have a maximum rate setting (4.0 C/s shown).
+
+**Default profile (tip temperatures, tin-lead Sn62, TCJ D-case on a signal pad, tip on the pad from the start):**
+
+| Step | Tip | Rate | Hold |
+|---|---|---|---|
+| start delay | idle 165 C | - | 3 s after the lift (wipe, place the tip with flux) |
+| 1 preheat/soak | 190 C | 2 C/s | 20 s |
+| 2 reflow/peak | 240 C | 2 C/s | 5 s |
+| end | heater back to idle, lockout 5 s | | |
+
+About 63 s in all; the tip is above 179 C for about 50 s (the joint less): inside the SnPb 60 s limit; ramp at the SnPb maximum of 2 C/s; the joint should reach about 215-225 C at a 240 C tip (tip to joint difference not measured yet). Ground plane: start with soak 30 s, peak 255 C. The old single ramp (45 C/s to 275 C, 1.1 s) was about 20 x the reflow ramp limit.
+
+**Firmware (ramp_core.h):**
+- Parameter 12 is now the start: 0 knob/app only, 1 lift + delay (default), 2 contact (cooling), 3 contact + power (both experimental, as in 2.6). The knob and the app can always start a profile.
+- New parameters 13 start delay (0.1 s, 0-100, default 30), 14 maximum rate (0.1 C/s, 5-1000, default 40), 15 number of steps (1-6, default 2). Lockout default 12 -> 5 s, ready limit default 230 -> 200 C. Parameters 1-3 (single ramp peak, rate, dwell) are no longer used. EEPROM: parameters mark 0xD6 (16 values; 0xD5/0xD4/0xD3 still read; when an older format is read the start becomes 1 and the ready limit at most 200), steps at 420 (mark 0xE1, 6 x (C, 0.1 C/s, 0.1 s)).
+- Lift start: when the iron leaves its stand in IDLE or LOCKOUT, the delay counts (display START IN 3s); after it, the profile starts as soon as the station is ready (WAIT while the tip is above the ready limit or the lockout runs). Putting the iron back cancels it. Needs the stand sensor (HOLDER on or auto); without it, start by knob or app.
+- Each step ramps the target from the previous step's temperature (step 1: the tip temperature, between idle and step 1's temperature) at its rate, then holds; the hold starts when the target is there and the tip is within +-5 C, or 1.5 s after the ramp should have ended. After the last step: lockout, target idle. Abort: knob press, app, iron in the stand, menu opened.
+- Display: READY LIFT, START IN 3s, WAIT, S1/2 50s RAMP|HOLD (seconds left in the whole profile), LOCKOUT 5s.
+- Validation: steps 100-350 C, rate 0.1 C/s from 1 to the maximum rate, hold up to 600 s; highest step at least idle + 10; ready limit between idle + 10 and highest step - 10.
+
+**Protocol 9:** 0x50/0x51 carry 16 values (a 13 value write from a protocol 8 app keeps values 13-16; a 9 value write keeps 10-16); 0x53 adds step (byte 22), lift start state (byte 23: 0 none, 1 delay, 2 waiting until ready) and u16 delay ms left (24); while running, the u16 ms left is the whole profile. 0x56 read steps -> [0, count, 6 x (u16 C, u16 0.1 C/s, u16 0.1 s)], 0x57 write steps [key, count, 6 x 3 u16] -> [status 0/1/2/3].
+
+**App:** Ramp page: start, start delay, maximum rate, step table (6 rows, temperature / rate / hold), status with step and time left, "Starting in x s" and "Waiting" for the lift start. The single ramp fields are hidden with protocol 9.
 
 ### 2.5 No phone needed, no heartbeat
 The review prompt had a 5 s disconnect fail-safe because the phone ran the ramp. Here the station owns the state machine, so the phone is only an editor and viewer. A lost connection changes nothing; the station-side limits (time limits, abort, idle time-out) are the safety net.
