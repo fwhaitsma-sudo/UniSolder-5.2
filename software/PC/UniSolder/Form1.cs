@@ -41,6 +41,8 @@ namespace UniSolder
 
         private TabControl tabs;
         private ControlTab controlTab;
+        private ToolsTab toolsTab;
+        private bool wasConnected;
 
         /// <summary>
         /// Same pages as the Android app. The controls made by the designer are moved to their page here:
@@ -59,9 +61,10 @@ namespace UniSolder
             var live = new TabPage("Live");
             var control = new TabPage("Control");
             var pid = new TabPage("PID");
+            var tools = new TabPage("Tools");
             var firmware = new TabPage("Firmware");
             Font pageFont = new Font(Font.FontFamily, 9f);
-            foreach (var tp in new[] { live, control, pid, firmware }) { tp.Font = pageFont; tp.UseVisualStyleBackColor = true; }
+            foreach (var tp in new[] { live, control, pid, tools, firmware }) { tp.Font = pageFont; tp.UseVisualStyleBackColor = true; }
 
             //pull the sliders and the buttons out of the chart layout
             buttonsPanel.Controls.Remove(Button8);
@@ -71,6 +74,11 @@ namespace UniSolder
 
             Button8.Margin = new Padding(6, 12, 6, 0);
             panel1.Controls.Add(Button8);
+            //Live tab: record and dashboard buttons, like the Android app
+            var recButton = new Button { Text = "Record", Width = Button8.Width, Height = Button8.Height, Margin = new Padding(6, 6, 6, 0), UseVisualStyleBackColor = true };
+            var dashButton = new Button { Text = "Dashboard", Width = Button8.Width, Height = Button8.Height, Margin = new Padding(6, 6, 6, 0), UseVisualStyleBackColor = true };
+            panel1.Controls.Add(recButton);
+            panel1.Controls.Add(dashButton);
             live.Controls.Add(mainLayout);
 
             bottomPanel.Dock = DockStyle.Top;
@@ -87,10 +95,18 @@ namespace UniSolder
             controlTab = new ControlTab(lUniSolder);
             control.Controls.Add(controlTab);
 
+            toolsTab = new ToolsTab();
+            tools.Controls.Add(toolsTab);
+            recButton.Click += (s, e) => toolsTab.ToggleRecording();
+            dashButton.Click += (s, e) => toolsTab.ShowDashboard();
+            toolsTab.RecordingChanged += on => recButton.Text = on ? "Stop rec." : "Record";
+
             tabs.TabPages.Add(live);
             tabs.TabPages.Add(control);
             tabs.TabPages.Add(pid);
+            tabs.TabPages.Add(tools);
             tabs.TabPages.Add(firmware);
+            tabs.SelectedIndexChanged += (s, e) => { if (tabs.SelectedTab == tools) toolsTab.RefreshSessions(); };
             Controls.Add(tabs);
             Controls.SetChildIndex(tabs, 0);
             ResumeLayout(true);
@@ -106,6 +122,9 @@ namespace UniSolder
                 }
             }
             UpdateConnectionStatus();
+            bool connected = lUniSolder.Transport.Connected;
+            if (wasConnected && !connected) toolsTab?.OnDisconnected();
+            wasConnected = connected;
         }
 
         private void Form1_Disposed(object sender, EventArgs e)
@@ -254,6 +273,11 @@ namespace UniSolder
             }
             else
             {
+                if (toolsTab != null)
+                {
+                    toolsTab.IronId = lUniSolder.IronId;
+                    toolsTab.ShowTip();
+                }
                 //PID stays null while the sliders are updated, so ValueChanged does not send anything
                 PID = null;
                 var pid = lUniSolder.Transport.Connected ? lUniSolder.AppGetPIDParameters() : null;
@@ -290,6 +314,11 @@ namespace UniSolder
             else
             {
                 var b = e.Data;
+                if (b[0] == 3 && toolsTab != null)
+                {
+                    var sample = LiveSample.Parse(b);
+                    if (sample != null) toolsTab.OnSample(sample);
+                }
                 switch (b[0])
                 {
                     case 3:

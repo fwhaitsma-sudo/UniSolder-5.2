@@ -164,6 +164,8 @@ public class UniSolderComm
 
     public event EventHandler<LiveDataReceivedEventData> LiveDataReceived;
     public event EventHandler InstrumentChange;
+    /// <summary>Iron ID from the last instrument change packet (0 = none yet).</summary>
+    public int IronId { get; private set; }
 
 
     private Stopwatch TOTimer = new Stopwatch();
@@ -665,6 +667,7 @@ public class UniSolderComm
         {
             case 1:
                 SSComm.Log.Info("RX instrument change, iron ID=0x" + (RXB[1] | (RXB[2] << 8)).ToString("X4"));
+                IronId = RXB[1] | (RXB[2] << 8);
                 InstrumentChange?.Invoke(this, new EventArgs());
                 break;
             case 3:
