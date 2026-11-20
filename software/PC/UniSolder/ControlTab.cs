@@ -12,20 +12,20 @@ namespace UniSolder
     /// Control tab: set temperature, presets, sleep, switch iron, station info and settings backup/restore.
     /// Same function as the Control tab of the Android app. All commands run on the UI thread (each waits at most a second).
     /// </summary>
-    class ControlTab : Panel
+    class ControlTab : Page
     {
         private readonly UniSolderComm comm;
         private readonly Label stateLabel = new Label();
         private readonly Label tempLabel = new Label();
         private readonly Label infoLabel = new Label();
         private readonly YellowTrackBar tempBar = new YellowTrackBar();
-        private readonly Button minusButton = new Button();
-        private readonly Button plusButton = new Button();
-        private readonly Button[] presetButtons = new Button[4];
-        private readonly Button sleepButton = new Button();
-        private readonly Button ironButton = new Button();
-        private readonly Button saveButton = new Button();
-        private readonly Button restoreButton = new Button();
+        private readonly ThemedButton minusButton = new ThemedButton();
+        private readonly ThemedButton plusButton = new ThemedButton();
+        private readonly ThemedButton[] presetButtons = new ThemedButton[4];
+        private readonly ThemedButton sleepButton = new ThemedButton();
+        private readonly ThemedButton ironButton = new ThemedButton();
+        private readonly ThemedButton saveButton = new ThemedButton();
+        private readonly ThemedButton restoreButton = new ThemedButton();
         private readonly Timer pollTimer = new Timer();
         private readonly Timer sendTimer = new Timer();
 
@@ -38,109 +38,99 @@ namespace UniSolder
         public ControlTab(UniSolderComm comm)
         {
             this.comm = comm;
-            Dock = DockStyle.Fill;
-            AutoScroll = true;
-            Padding = new Padding(16);
-
-            var flow = new FlowLayoutPanel();
-            flow.Dock = DockStyle.Top;
-            flow.AutoSize = true;
-            flow.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-            flow.FlowDirection = FlowDirection.TopDown;
-            flow.WrapContents = false;
+            var col = Col;
 
             stateLabel.AutoSize = true;
-            stateLabel.Font = new Font(Font.FontFamily, 12f, FontStyle.Bold);
-            stateLabel.Margin = new Padding(0, 0, 0, 12);
+            stateLabel.Font = Theme.MakeFont(12f, FontStyle.Bold);
+            stateLabel.ForeColor = Theme.Yellow;
+            stateLabel.BackColor = Theme.Bg;
+            stateLabel.Margin = new Padding(0, 14, 0, 0);
             stateLabel.Text = "Not connected";
-            flow.Controls.Add(stateLabel);
+            col.Controls.Add(stateLabel);
 
             // temperature
-            var tempBox = MakeBox("Temperature");
+            col.Controls.Add(Theme.Heading("Temperature"));
             tempLabel.AutoSize = true;
-            tempLabel.Font = new Font(Font.FontFamily, 28f, FontStyle.Bold);
+            tempLabel.Font = Theme.MakeFont(30f, FontStyle.Bold);
+            tempLabel.ForeColor = Theme.Text;
+            tempLabel.BackColor = Theme.Bg;
+            tempLabel.Margin = new Padding(0, 0, 0, 8);
             tempLabel.Text = "-";
-            tempLabel.Margin = new Padding(8, 4, 8, 4);
-            tempBar.Width = 520;
+            col.Controls.Add(tempLabel);
+
+            tempBar.AutoSize = false;
+            tempBar.Dock = DockStyle.Fill;
+            tempBar.BackColor = Theme.Bg;
             tempBar.TickFrequency = 10;
             tempBar.LargeChange = 10;
             tempBar.SmallChange = 1;
             tempBar.Minimum = 0;
             tempBar.Maximum = 100;
-            tempBar.Margin = new Padding(8, 4, 8, 4);
+            tempBar.Margin = new Padding(8, 0, 8, 0);
             tempBar.ValueChanged += TempBar_ValueChanged;
-            StyleButton(minusButton, "−", 56);
-            StyleButton(plusButton, "+", 56);
+            Theme.Style(minusButton, "\u2212", 56, 52);
+            Theme.Style(plusButton, "+", 56, 52);
+            minusButton.Dock = DockStyle.Fill;
+            plusButton.Dock = DockStyle.Fill;
+            minusButton.Margin = new Padding(0);
+            plusButton.Margin = new Padding(0);
             minusButton.Click += delegate { StepTemp(-1); };
             plusButton.Click += delegate { StepTemp(1); };
-            var barRow = new FlowLayoutPanel();
-            barRow.AutoSize = true;
-            barRow.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-            barRow.Controls.Add(minusButton);
-            barRow.Controls.Add(tempBar);
-            barRow.Controls.Add(plusButton);
-            tempBox.Controls.Add(tempLabel);
-            tempBox.Controls.Add(barRow);
-            flow.Controls.Add(Wrap(tempBox));
+            var barRow = new TableLayoutPanel();
+            barRow.Tag = "fill";
+            barRow.ColumnCount = 3;
+            barRow.RowCount = 1;
+            barRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 56));
+            barRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            barRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 56));
+            barRow.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            barRow.Height = 56;
+            barRow.Width = 400;
+            barRow.Margin = new Padding(0, 0, 0, 6);
+            barRow.BackColor = Theme.Bg;
+            barRow.Controls.Add(minusButton, 0, 0);
+            barRow.Controls.Add(tempBar, 1, 0);
+            barRow.Controls.Add(plusButton, 2, 0);
+            col.Controls.Add(barRow);
 
             // presets
-            var presetBox = MakeBox("Presets");
-            var presetRow = new FlowLayoutPanel();
-            presetRow.AutoSize = true;
-            presetRow.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            col.Controls.Add(Theme.Heading("Presets"));
+            var presetRow = Theme.Row();
             for (int i = 0; i < 4; i++)
             {
                 int index = i;
-                presetButtons[i] = new Button();
-                StyleButton(presetButtons[i], "T" + (i + 1), 110);
-                presetButtons[i].Height = 56;
+                presetButtons[i] = new ThemedButton();
+                Theme.Style(presetButtons[i], "T" + (i + 1), 130, 56);
                 presetButtons[i].Click += delegate { Preset(index); };
                 presetRow.Controls.Add(presetButtons[i]);
             }
-            presetBox.Controls.Add(presetRow);
-            flow.Controls.Add(Wrap(presetBox));
+            col.Controls.Add(presetRow);
 
             // station
-            var stationBox = MakeBox("Station");
-            var stationRow = new FlowLayoutPanel();
-            stationRow.AutoSize = true;
-            stationRow.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-            StyleButton(sleepButton, "Sleep", 130);
+            col.Controls.Add(Theme.Heading("Station"));
+            Theme.Style(sleepButton, "Sleep", 140);
             sleepButton.Click += Sleep_Click;
-            StyleButton(ironButton, "Switch iron", 220);
+            Theme.Style(ironButton, "Switch iron", 280);
             ironButton.Click += Iron_Click;
             ironButton.Visible = false;
-            stationRow.Controls.Add(sleepButton);
-            stationRow.Controls.Add(ironButton);
-            stationBox.Controls.Add(stationRow);
-            flow.Controls.Add(Wrap(stationBox));
+            col.Controls.Add(Theme.Row(sleepButton, ironButton));
 
             // settings
-            var settingsBox = MakeBox("Settings backup");
-            var note = new Label();
-            note.AutoSize = true;
-            note.MaximumSize = new Size(620, 0);
-            note.Margin = new Padding(8, 4, 8, 4);
-            note.Text = "Saves the station settings (not the pincode) to a file, or writes them back from a file. The station restarts after a restore. The file is the same format as the Android app uses.";
-            var settingsRow = new FlowLayoutPanel();
-            settingsRow.AutoSize = true;
-            settingsRow.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-            StyleButton(saveButton, "Save settings...", 170);
-            StyleButton(restoreButton, "Restore settings...", 190);
+            col.Controls.Add(Theme.Heading("Settings backup"));
+            col.Controls.Add(Theme.Hint("Saves the station settings (not the pincode) to a file, or writes them back from a file. The station restarts after a restore. The file is the same format as the Android app uses."));
+            Theme.Style(saveButton, "Save settings...", 190);
+            Theme.Style(restoreButton, "Restore settings...", 210);
             saveButton.Click += Save_Click;
             restoreButton.Click += Restore_Click;
-            settingsRow.Controls.Add(saveButton);
-            settingsRow.Controls.Add(restoreButton);
-            settingsBox.Controls.Add(note);
-            settingsBox.Controls.Add(settingsRow);
-            flow.Controls.Add(Wrap(settingsBox));
+            col.Controls.Add(Theme.Row(saveButton, restoreButton));
 
             infoLabel.AutoSize = true;
-            infoLabel.MaximumSize = new Size(700, 0);
-            infoLabel.Margin = new Padding(0, 8, 0, 0);
-            flow.Controls.Add(infoLabel);
+            infoLabel.Font = Theme.MakeFont(9f);
+            infoLabel.ForeColor = Theme.Muted;
+            infoLabel.BackColor = Theme.Bg;
+            infoLabel.Margin = new Padding(0, 20, 0, 0);
+            col.Controls.Add(infoLabel);
 
-            Controls.Add(flow);
             EnableControls(false);
 
             pollTimer.Interval = 1000;
@@ -158,42 +148,6 @@ namespace UniSolder
                 sendTimer.Dispose();
             }
             base.Dispose(disposing);
-        }
-
-        private static GroupBox MakeBox(string title)
-        {
-            var g = new GroupBox();
-            g.Text = title;
-            g.AutoSize = true;
-            g.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-            g.Padding = new Padding(8);
-            return g;
-        }
-
-        // GroupBox does not lay out its children by itself: a FlowLayoutPanel inside gives it its size
-        private static Control Wrap(GroupBox g)
-        {
-            var inner = new FlowLayoutPanel();
-            inner.FlowDirection = FlowDirection.TopDown;
-            inner.WrapContents = false;
-            inner.AutoSize = true;
-            inner.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-            var controls = new List<Control>();
-            foreach (Control c in g.Controls) controls.Add(c);
-            g.Controls.Clear();
-            foreach (var c in controls) inner.Controls.Add(c);
-            g.Controls.Add(inner);
-            g.Margin = new Padding(0, 0, 0, 12);
-            return g;
-        }
-
-        private static void StyleButton(Button b, string text, int width)
-        {
-            b.Text = text;
-            b.Width = width;
-            b.Height = 40;
-            b.Margin = new Padding(8, 6, 8, 6);
-            b.UseVisualStyleBackColor = true;
         }
 
         // ---------------------------------------------------------------- state

@@ -15,14 +15,14 @@ namespace UniSolder
     /// sessions (open, save a copy, delete), tip health (heater resistance with a baseline per iron ID), the overheat alert
     /// and the full-screen bench dashboard. Fed with every live data packet by Form1 (on the UI thread).
     /// </summary>
-    class ToolsTab : Panel
+    class ToolsTab : Page
     {
         private readonly Recorder recorder = new Recorder();
         private readonly Label recordText = new Label();
-        private readonly Button recordButton = new Button();
+        private readonly ThemedButton recordButton = new ThemedButton();
         private readonly ListView sessions = new ListView();
         private readonly Label tipText = new Label();
-        private readonly CheckBox overheatCheck = new CheckBox();
+        private readonly ThemedCheck overheatCheck = new ThemedCheck();
         private readonly NotifyIcon notify = new NotifyIcon();
         private DashboardForm dashboard;
 
@@ -51,100 +51,83 @@ namespace UniSolder
 
         public ToolsTab()
         {
-            Dock = DockStyle.Fill;
-            AutoScroll = true;
-            Padding = new Padding(16);
-
-            var flow = new FlowLayoutPanel();
-            flow.Dock = DockStyle.Top;
-            flow.AutoSize = true;
-            flow.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-            flow.FlowDirection = FlowDirection.TopDown;
-            flow.WrapContents = false;
+            var col = Col;
 
             // recording
-            var rec = MakeBox("Recording");
+            col.Controls.Add(Theme.Heading("Recording"));
             recordText.AutoSize = true;
-            recordText.MaximumSize = new Size(640, 0);
-            recordText.Text = "Records set temperature, actual temperature, power and heater resistance to a file, five times a second.";
-            rec.Controls.Add(recordText);
-            StyleButton(recordButton, "Start recording", 220);
+            recordText.Font = Theme.MakeFont(10f);
+            recordText.ForeColor = Theme.Muted;
+            recordText.BackColor = Theme.Bg;
+            recordText.Margin = new Padding(0, 2, 0, 6);
+            recordText.Text = IdleRecordText;
+            col.Controls.Add(recordText);
+            Theme.Style(recordButton, "Start recording", 220);
+            recordButton.Strong = true;
             recordButton.Click += (s, e) => ToggleRecording();
-            rec.Controls.Add(recordButton);
-            var dashButton = new Button();
-            StyleButton(dashButton, "Dashboard (full screen)", 220);
+            var dashButton = new ThemedButton();
+            Theme.Style(dashButton, "Dashboard (full screen)", 260);
             dashButton.Click += (s, e) => ShowDashboard();
-            rec.Controls.Add(dashButton);
-            flow.Controls.Add(Wrap(rec));
+            col.Controls.Add(Theme.Row(recordButton, dashButton));
 
             // sessions
-            var ses = MakeBox("Sessions");
+            col.Controls.Add(Theme.Heading("Sessions"));
             sessions.View = View.Details;
             sessions.FullRowSelect = true;
             sessions.MultiSelect = false;
             sessions.HideSelection = false;
-            sessions.Width = 640;
-            sessions.Height = 200;
-            sessions.Columns.Add("Session", 180);
-            sessions.Columns.Add("Length", 70);
-            sessions.Columns.Add("Max °C", 70);
-            sessions.Columns.Add("Avg power", 80);
-            sessions.Columns.Add("Heat-up", 80);
-            sessions.Columns.Add("Rows", 60);
+            sessions.Tag = "fill";
+            sessions.Height = 230;
+            sessions.Margin = new Padding(0, 0, 0, 6);
+            sessions.HeaderStyle = ColumnHeaderStyle.Nonclickable;
+            sessions.Font = Theme.MakeFont(10f);
+            int u = Math.Max(6, TextRenderer.MeasureText("0000000000", sessions.Font).Width / 10);
+            sessions.Columns.Add("Session", u * 22);
+            sessions.Columns.Add("Length", u * 9);
+            sessions.Columns.Add("Max °C", u * 9);
+            sessions.Columns.Add("Avg power", u * 11);
+            sessions.Columns.Add("Heat-up", u * 10);
+            sessions.Columns.Add("Rows", u * 8);
+            Theme.StyleList(sessions);
             sessions.DoubleClick += (s, e) => OpenSelected();
-            ses.Controls.Add(sessions);
-            var row = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
-            var openButton = new Button();
-            StyleButton(openButton, "Open", 110);
+            col.Controls.Add(sessions);
+            var openButton = new ThemedButton();
+            Theme.Style(openButton, "Open", 110);
             openButton.Click += (s, e) => OpenSelected();
-            var copyButton = new Button();
-            StyleButton(copyButton, "Save a copy...", 130);
+            var copyButton = new ThemedButton();
+            Theme.Style(copyButton, "Save a copy...", 150);
             copyButton.Click += (s, e) => CopySelected();
-            var deleteButton = new Button();
-            StyleButton(deleteButton, "Delete", 110);
+            var deleteButton = new ThemedButton();
+            Theme.Style(deleteButton, "Delete", 110);
             deleteButton.Click += (s, e) => DeleteSelected();
-            var folderButton = new Button();
-            StyleButton(folderButton, "Open folder", 130);
+            var folderButton = new ThemedButton();
+            Theme.Style(folderButton, "Open folder", 150);
             folderButton.Click += (s, e) => OpenFolder();
-            row.Controls.AddRange(new Control[] { openButton, copyButton, deleteButton, folderButton });
-            ses.Controls.Add(row);
-            flow.Controls.Add(Wrap(ses));
+            col.Controls.Add(Theme.Row(openButton, copyButton, deleteButton, folderButton));
 
             // tip health
-            var tip = MakeBox("Tip health");
+            col.Controls.Add(Theme.Heading("Tip health"));
             tipText.AutoSize = true;
-            tipText.Font = new Font(Font.FontFamily, 10.5f);
-            tipText.MaximumSize = new Size(640, 0);
-            tip.Controls.Add(tipText);
-            var baseNote = new Label();
-            baseNote.AutoSize = true;
-            baseNote.MaximumSize = new Size(640, 0);
-            baseNote.Margin = new Padding(0, 8, 0, 0);
-            baseNote.Text = "The heater resistance of a good tip stays about the same. A rising value points to a worn tip or a poor contact. " +
-                "Press the button with a new or good tip heated up, so later readings can be compared with it.";
-            tip.Controls.Add(baseNote);
-            var baseButton = new Button();
-            StyleButton(baseButton, "Use the current average as this iron's baseline", 380);
+            tipText.Font = Theme.MakeFont(10.5f);
+            tipText.ForeColor = Theme.Text;
+            tipText.BackColor = Theme.Bg;
+            tipText.Margin = new Padding(0, 2, 0, 6);
+            col.Controls.Add(tipText);
+            col.Controls.Add(Theme.Hint("The heater resistance of a good tip stays about the same. A rising value points to a worn tip or a poor contact. " +
+                "Press the button with a new or good tip heated up, so later readings can be compared with it."));
+            var baseButton = new ThemedButton();
+            Theme.Style(baseButton, "Use the current average as baseline", 380);
             baseButton.Click += (s, e) => SetBaseline();
-            tip.Controls.Add(baseButton);
-            flow.Controls.Add(Wrap(tip));
+            col.Controls.Add(Theme.Row(baseButton));
 
             // alerts
-            var al = MakeBox("Alerts");
-            overheatCheck.AutoSize = true;
-            overheatCheck.Text = "Warn when the tip stays 25 °C above the target and is not cooling";
+            col.Controls.Add(Theme.Heading("Alerts"));
+            overheatCheck.Text = "Warn when the tip stays too hot";
             overheatCheck.Checked = AppPrefs.GetBool("alert_overheat", false);
             overheatCheck.CheckedChanged += (s, e) => AppPrefs.PutBool("alert_overheat", overheatCheck.Checked);
-            al.Controls.Add(overheatCheck);
-            var alertNote = new Label();
-            alertNote.AutoSize = true;
-            alertNote.MaximumSize = new Size(640, 0);
-            alertNote.Text = "Alerts only work while this program is running and the station is connected. " +
-                "The program can warn, but it cannot switch the heater off.";
-            al.Controls.Add(alertNote);
-            flow.Controls.Add(Wrap(al));
-
-            Controls.Add(flow);
+            col.Controls.Add(overheatCheck);
+            col.Controls.Add(Theme.Hint("Warns when the tip stays 25 °C above the target and is not cooling. Alerts only work while this program is running and the station is connected. " +
+                "The program can warn, but it cannot switch the heater off."));
 
             notify.Icon = SystemIcons.Warning;
             notify.Text = "UniSolder";
@@ -154,41 +137,7 @@ namespace UniSolder
             RefreshSessions();
         }
 
-        private static GroupBox MakeBox(string title)
-        {
-            var g = new GroupBox();
-            g.Text = title;
-            g.AutoSize = true;
-            g.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-            g.Padding = new Padding(8);
-            return g;
-        }
-
-        // GroupBox does not lay out its children by itself: a FlowLayoutPanel inside gives it its size
-        private static Control Wrap(GroupBox g)
-        {
-            var inner = new FlowLayoutPanel();
-            inner.FlowDirection = FlowDirection.TopDown;
-            inner.WrapContents = false;
-            inner.AutoSize = true;
-            inner.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-            var controls = new System.Collections.Generic.List<Control>();
-            foreach (Control c in g.Controls) controls.Add(c);
-            g.Controls.Clear();
-            foreach (var c in controls) inner.Controls.Add(c);
-            g.Controls.Add(inner);
-            g.Margin = new Padding(0, 0, 0, 12);
-            return g;
-        }
-
-        private static void StyleButton(Button b, string text, int width)
-        {
-            b.Text = text;
-            b.Width = width;
-            b.Height = 40;
-            b.Margin = new Padding(0, 6, 12, 6);
-            b.UseVisualStyleBackColor = true;
-        }
+        private const string IdleRecordText = "Records set temperature, actual temperature, power and heater resistance to a file, five times a second.";
 
         // ---------------------------------------------------------------- recording
 
@@ -212,7 +161,7 @@ namespace UniSolder
         {
             recordButton.Text = recorder.Recording ? "Stop recording" : "Start recording";
             if (!recorder.Recording)
-                recordText.Text = "Records set temperature, actual temperature, power and heater resistance to a file, five times a second.";
+                recordText.Text = IdleRecordText;
         }
 
         public void RefreshSessions()

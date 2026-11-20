@@ -39,77 +39,145 @@ namespace UniSolder
             ConnectionTimer.Tick += ConnectionTimer_Tick;
         }
 
-        private TabControl tabs;
+        private PillNav nav;
+        private Control[] pages;
         private ControlTab controlTab;
         private ToolsTab toolsTab;
         private bool wasConnected;
 
         /// <summary>
-        /// Same pages as the Android app. The controls made by the designer are moved to their page here:
+        /// Same pages as the Android app, with its look: dark background, yellow headings and rounded buttons, and a page bar at the
+        /// bottom. The controls made by the designer are moved to their page here:
         /// Live = chart and trace tick boxes (+ stop/start), PID = sliders, Firmware = query device and update.
         /// </summary>
         private void BuildTabs()
         {
             SuspendLayout();
-            tabs = new TabControl();
-            tabs.Dock = DockStyle.Fill;
-            tabs.Font = new Font(Font.FontFamily, 11f);
-            tabs.Padding = new Point(20, 6);
-            tabs.SizeMode = TabSizeMode.Fixed;
-            tabs.ItemSize = new Size(120, 36);
+            Font = Theme.MakeFont(10f);
+            BackColor = Theme.Bg;
+            ForeColor = Theme.Text;
+            HandleCreated += (s, e) => Theme.DarkTitle(this);
 
-            var live = new TabPage("Live");
-            var control = new TabPage("Control");
-            var pid = new TabPage("PID");
-            var tools = new TabPage("Tools");
-            var firmware = new TabPage("Firmware");
-            Font pageFont = new Font(Font.FontFamily, 9f);
-            foreach (var tp in new[] { live, control, pid, tools, firmware }) { tp.Font = pageFont; tp.UseVisualStyleBackColor = true; }
+            //status bar
+            statusStrip1.Renderer = new DarkRenderer();
+            statusStrip1.BackColor = Theme.Card;
+            statusStrip1.ForeColor = Theme.Muted;
+            statusStrip1.Font = Theme.MakeFont(9f);
+            connStatusLabel.ForeColor = Theme.Muted;
+            logStatusLabel.ForeColor = Theme.Muted;
 
-            //pull the sliders and the buttons out of the chart layout
+            //Live: chart on the left, trace tick boxes and buttons on the right
             buttonsPanel.Controls.Remove(Button8);
             bottomPanel.Controls.Remove(buttonsPanel);
             mainLayout.Controls.Remove(bottomPanel);
+            mainLayout.RowCount = 1;
+            mainLayout.RowStyles.Clear();
+            mainLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             Controls.Remove(mainLayout);
+            mainLayout.BackColor = Theme.Bg;
+            mainLayout.Padding = new Padding(16, 8, 16, 8);
+            panel1.BackColor = Theme.Bg;
+            panel1.Font = Theme.MakeFont(10f);
+            panel1.Padding = new Padding(16, 12, 0, 6);
+            foreach (Control c in panel1.Controls) c.BackColor = Theme.Bg;
 
-            Button8.Margin = new Padding(6, 12, 6, 0);
+            Theme.Style(Button8, "STOP", 170);
+            Button8.Margin = new Padding(0, 16, 0, 0);
             panel1.Controls.Add(Button8);
-            //Live tab: record and dashboard buttons, like the Android app
-            var recButton = new Button { Text = "Record", Width = Button8.Width, Height = Button8.Height, Margin = new Padding(6, 6, 6, 0), UseVisualStyleBackColor = true };
-            var dashButton = new Button { Text = "Dashboard", Width = Button8.Width, Height = Button8.Height, Margin = new Padding(6, 6, 6, 0), UseVisualStyleBackColor = true };
+            //record and dashboard buttons, like the Android app
+            var recButton = new ThemedButton { Strong = true };
+            Theme.Style(recButton, "Record", 170);
+            recButton.Margin = new Padding(0, 8, 0, 0);
+            var dashButton = new ThemedButton();
+            Theme.Style(dashButton, "Dashboard", 170);
+            dashButton.Margin = new Padding(0, 8, 0, 0);
             panel1.Controls.Add(recButton);
             panel1.Controls.Add(dashButton);
+            var live = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Bg };
             live.Controls.Add(mainLayout);
 
-            bottomPanel.Dock = DockStyle.Top;
-            bottomPanel.Height = 180;
-            bottomPanel.Padding = new Padding(16);
-            bottomPanel.Margin = new Padding(0);
-            pid.Controls.Add(bottomPanel);
+            //PID: one row per slider, label on the left
+            var pid = new Page();
+            pid.Col.Controls.Add(Theme.Heading("PID"));
+            var table = new TableLayoutPanel();
+            table.Tag = "fill";
+            table.ColumnCount = 2;
+            table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 30F));
+            table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 70F));
+            var pidRows = new[]
+            {
+                new KeyValuePair<Label, Control>(GLabel, GTrackBar),
+                new KeyValuePair<Label, Control>(OVFGLabel, OVFGTrackBar),
+                new KeyValuePair<Label, Control>(KpLabel, KpTrackBar),
+                new KeyValuePair<Label, Control>(KiLabel, KiTrackBar),
+                new KeyValuePair<Label, Control>(DGLabel, DGTrackBar)
+            };
+            table.RowCount = pidRows.Length;
+            table.BackColor = Theme.Bg;
+            table.Margin = new Padding(0);
+            table.Height = 64 * pidRows.Length;
+            table.Width = 400;
+            for (int i = 0; i < pidRows.Length; i++)
+            {
+                table.RowStyles.Add(new RowStyle(SizeType.Absolute, 64));
+                var label = pidRows[i].Key;
+                var bar = pidRows[i].Value;
+                label.Parent?.Controls.Remove(label);
+                bar.Parent?.Controls.Remove(bar);
+                label.AutoSize = false;
+                label.Anchor = AnchorStyles.None;
+                label.Dock = DockStyle.Fill;
+                label.Margin = new Padding(0);
+                label.TextAlign = ContentAlignment.MiddleLeft;
+                label.Font = Theme.MakeFont(11f);
+                label.ForeColor = Theme.Text;
+                label.BackColor = Theme.Bg;
+                bar.AutoSize = false;
+                bar.Anchor = AnchorStyles.None;
+                bar.Dock = DockStyle.Fill;
+                bar.Margin = new Padding(8, 0, 8, 0);
+                bar.BackColor = Theme.Bg;
+                table.Controls.Add(label, 0, i);
+                table.Controls.Add(bar, 1, i);
+            }
+            pid.Col.Controls.Add(table);
 
-            buttonsPanel.Dock = DockStyle.Top;
-            buttonsPanel.Padding = new Padding(16);
-            buttonsPanel.Margin = new Padding(0);
-            firmware.Controls.Add(buttonsPanel);
+            //Firmware
+            var firmware = new Page();
+            firmware.Col.Controls.Add(Theme.Heading("Firmware"));
+            Theme.Style(Button6, "Query device", 200);
+            Theme.Style(Button3, "Update Firmware", 220);
+            firmware.Col.Controls.Add(Theme.Row(Button6, Button3));
 
             controlTab = new ControlTab(lUniSolder);
-            control.Controls.Add(controlTab);
-
             toolsTab = new ToolsTab();
-            tools.Controls.Add(toolsTab);
             recButton.Click += (s, e) => toolsTab.ToggleRecording();
             dashButton.Click += (s, e) => toolsTab.ShowDashboard();
             toolsTab.RecordingChanged += on => recButton.Text = on ? "Stop rec." : "Record";
 
-            tabs.TabPages.Add(live);
-            tabs.TabPages.Add(control);
-            tabs.TabPages.Add(pid);
-            tabs.TabPages.Add(tools);
-            tabs.TabPages.Add(firmware);
-            tabs.SelectedIndexChanged += (s, e) => { if (tabs.SelectedTab == tools) toolsTab.RefreshSessions(); };
-            Controls.Add(tabs);
-            Controls.SetChildIndex(tabs, 0);
+            pages = new Control[] { live, controlTab, pid, toolsTab, firmware };
+            var host = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Bg };
+            foreach (var p in pages)
+            {
+                p.Dock = DockStyle.Fill;
+                p.Visible = false;
+                host.Controls.Add(p);
+            }
+            nav = new PillNav(new[] { "Live", "Control", "PID", "Tools", "Firmware" });
+            nav.PageSelected += ShowPage;
+            Controls.Add(nav);
+            Controls.Add(host);
+            Controls.SetChildIndex(host, 0);
+            Controls.SetChildIndex(statusStrip1, Controls.Count - 1);
+            ShowPage(0);
+            nav.Select(0);
             ResumeLayout(true);
+        }
+
+        private void ShowPage(int index)
+        {
+            for (int i = 0; i < pages.Length; i++) pages[i].Visible = i == index;
+            if (pages[index] == toolsTab) toolsTab.RefreshSessions();
         }
 
         private void ConnectionTimer_Tick(object sender, EventArgs e)
