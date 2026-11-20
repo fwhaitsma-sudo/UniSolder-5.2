@@ -1,4 +1,5 @@
 using System;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing;
 using System.Globalization;
@@ -26,6 +27,8 @@ namespace UniSolder
         private DashboardForm dashboard;
 
         /// <summary>Iron ID from the last instrument change (for the tip baseline).</summary>
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public int IronId { get; set; }
 
         /// <summary>Called when a recording starts or stops.</summary>
