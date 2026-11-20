@@ -355,15 +355,23 @@ class RampPage(private val act: Activity, private val link: DeviceLink, private 
             // the station checks the values against the steps and the steps against the values (maximum rate, ready limit):
             // when one order is refused, the other one is tried
             var st = link.setRampPars(v)
+            val st1 = st
+            var st2: Int? = null
             if (steps9 != null) {
-                if (st == 0) st = link.setRampSteps(count9, steps9)
+                if (st == 0) { st = link.setRampSteps(count9, steps9); st2 = st }
                 else if (st == 2) {
-                    st = link.setRampSteps(count9, steps9)
+                    st = link.setRampSteps(count9, steps9); st2 = st
                     if (st == 0) st = link.setRampPars(v)
                 }
             }
             val back = if (st == 0) link.getRampPars(v.size) else null
             val backSteps = if (st == 0 && steps9 != null) link.getRampSteps(protocol() >= 10) else null
+            AppLog.info("Ramp save: values " + v.joinToString(",") + " steps " + count9 + ":" + (steps9?.joinToString(",") ?: "-") +
+                " | status values " + st1 + ", steps " + st2 + ", final " + st +
+                " | read back values " + (back?.joinToString(",") ?: "-") + " steps " + (backSteps?.first ?: -1) + ":" + (backSteps?.second?.joinToString(",") ?: "-") +
+                " slot " + (backSteps?.slot ?: -2))
+            if (back != null && !back.contentEquals(v)) AppLog.warn("Ramp save: the station reports other values than were sent")
+            if (backSteps != null && steps9 != null && !backSteps.second.contentEquals(steps9)) AppLog.warn("Ramp save: the station reports other steps than were sent")
             val slots = if (st == 0 && protocol() >= 10) readSlots() else null
             ui.post {
                 when (st) {
@@ -376,7 +384,8 @@ class RampPage(private val act: Activity, private val link: DeviceLink, private 
                     2 -> Toast.makeText(act, if (steps9 != null) "A value is out of range: steps 100-350 °C, rate up to the maximum rate, hold up to 600 s; the highest step at least 10 above idle; ready limit between idle + 10 and the highest step - 10"
                         else "A value is out of range (peak at least 10 above idle; ready limit between idle + 10 and peak - 10)", Toast.LENGTH_LONG).show()
                     3 -> Toast.makeText(act, "A profile is running: wait until it is finished", Toast.LENGTH_LONG).show()
-                    else -> Toast.makeText(act, "The station did not accept the values", Toast.LENGTH_LONG).show()
+                    null -> Toast.makeText(act, "No answer from the station: nothing saved", Toast.LENGTH_LONG).show()
+                    else -> Toast.makeText(act, "The station did not accept the values (status " + st + ")", Toast.LENGTH_LONG).show()
                 }
             }
         }
