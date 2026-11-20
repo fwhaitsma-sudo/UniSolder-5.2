@@ -1354,7 +1354,8 @@ void MenuTasks(int powerLost){
                         int menuOpen = !(CMode == DEFAULT_MENU || CMode == SET_TEMPERATURE || CMode == RESET_TEMPERATURE);
                         int fault = mainFlags.TipChange || PIDVars[0].NoHeater || PIDVars[0].NoSensor || PIDVars[0].ShortCircuit ||
                                     IronPars.Config[0].SensorConfig.Type == SENSOR_NONE;
-                        int rt = RampTick(DispTemp >> 4, (!FNAP && pars.Holder) ? 1 : 0, fault, menuOpen, userInput);
+                        //the stand counts whatever the HOLDER setting is, as for HLD on the display and HOLDER T (FNAP does not depend on it)
+                        int rt = RampTick(DispTemp >> 4, FNAP ? 0 : 1, fault, menuOpen, userInput);
                         if(RampSt) i = rt;
                     }
                     CTTemp = i;
