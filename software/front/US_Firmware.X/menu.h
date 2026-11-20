@@ -51,10 +51,13 @@ extern int RemoteSetParam(int p, unsigned int v);      /*0 done, 1 not settable,
 extern void RemoteGetName(char * out);                 /*NAME_LEN characters, padded with spaces*/
 extern int RemoteSetName(const unsigned char * in);    /*0 done, 2 bad character, 3 station is in its menu*/
 /*Ramp mode (see RAMP_MODE_DESIGN.md)*/
-extern void RemoteRampGet(unsigned int * v);           /*9 parameters: idle, peak, rate, dwell, lockout, time-out, duty jump, dip, ready limit*/
+extern void RemoteRampGet(unsigned int * v);           /*13 parameters: idle, peak, rate, dwell, lockout, time-out, duty jump, dip, ready limit, cooling constant, lift blank, wipe ripple, auto start*/
 extern int RemoteRampSet(const unsigned int * v);      /*0 done, 2 out of range, 3 a ramp is running*/
 extern int RemoteRampControl(int cmd);                 /*0 leave, 1 enter, 2 trigger, 3 abort; 0 done, 1 not possible, 3 station in menu*/
 extern void RemoteRampStatus(unsigned int * o);        /*6 values: state, ms left, target, highest temperature, ready, actual*/
+extern void RemoteRampDetect(unsigned int * o);        /*7 values: k, wipe ripple, flags, last event, automatic starts, wipes ignored, room 0.5 C*/
+extern void RemoteRampCapture(int cmd, unsigned int * o); /*cmd 0 status, 1 record again, 2 freeze; 5 values: state, reason, records, event index, room*/
+extern int RemoteRampCaptureRead(int first, int n, unsigned char * d); /*8 bytes per record; returns the number copied*/
 
 extern void MenuInit();
 extern void MenuTasks(int powerLost);

@@ -328,6 +328,8 @@ class MainActivity : Activity(), DeviceLink.Listener {
             label.text = f.format(0)
             f.label = label
             val bar = SeekBar(this)
+            bar.thumbTintList = android.content.res.ColorStateList.valueOf(0xFFFFC107.toInt())
+            bar.progressTintList = android.content.res.ColorStateList.valueOf(0xFFFFC107.toInt())
             bar.max = f.max
             bar.isEnabled = false
             bar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {

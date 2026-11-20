@@ -307,6 +307,8 @@ class SettingsPage(private val act: Activity, private val link: DeviceLink, priv
             p.text = "+"
             style(p)
             val sb = SeekBar(act)
+            sb.thumbTintList = android.content.res.ColorStateList.valueOf(0xFFFFC107.toInt())
+            sb.progressTintList = android.content.res.ColorStateList.valueOf(0xFFFFC107.toInt())
             sb.max = r.maxProgress()
             sb.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(b: SeekBar?, progress: Int, fromUser: Boolean) {

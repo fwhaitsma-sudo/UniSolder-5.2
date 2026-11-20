@@ -124,13 +124,13 @@ static int HandleCommand(void){
                     done = 1;
                 }
                 break;
-            case 0x80: //application info: [version minor, version major, board version, protocol (1 = remote control + settings, 2 = PID save, 3 = live settings 0x40/0x41, 4 = name 0x42/0x43, 5 = saved PID backup 0x44/0x45, 6 = state flag 32: iron in its stand now, 7 = ramp mode 0x50-0x53, state flag 64)]
+            case 0x80: //application info: [version minor, version major, board version, protocol (1 = remote control + settings, 2 = PID save, 3 = live settings 0x40/0x41, 4 = name 0x42/0x43, 5 = saved PID backup 0x44/0x45, 6 = state flag 32: iron in its stand now, 7 = ramp mode 0x50-0x53, state flag 64, 8 = 13 ramp values, contact detector in 0x53, capture 0x54/0x55)]
                 if(!TxBusy()){
                     cTX->Command = 0x80;
                     cTX->Data[0] = VERSION_MINOR;
                     cTX->Data[1] = VERSION_MAJOR;
                     cTX->Data[2] = BoardVersion;
-                    cTX->Data[3] = 7;
+                    cTX->Data[3] = 8;
                     TxSend();
                     done = 1;
                 }
@@ -285,28 +285,30 @@ static int HandleCommand(void){
                     done = 1;
                 }
                 break;
-            case 0x50: //read the ramp mode parameters; replies [status 0, 9 x u16: idle C, peak C, rate C/s, dwell 0.1 s, lockout s, time-out min, duty jump %, dip 0.5 C, ready limit C]
+            case 0x50: //read the ramp mode parameters; replies [status 0, 13 x u16: idle C, peak C, rate C/s, dwell 0.1 s, lockout s, time-out min, duty jump %, dip 0.5 C, ready limit C,
+                       //cooling constant 0.001/s, blank after lift s, wipe ripple %, auto start 0/1/2] (protocol 7 apps read the first 9)
                 if(!TxBusy()){
-                    unsigned int rv[9];
+                    unsigned int rv[13];
                     int i;
                     RemoteRampGet(rv);
                     cTX->Command = 0x50;
                     cTX->Data[0] = 0;
-                    for(i = 0; i < 9; i++) Put16(1 + i * 2, rv[i]);
+                    for(i = 0; i < 13; i++) Put16(1 + i * 2, rv[i]);
                     TxSend();
                     done = 1;
                 }
                 break;
-            case 0x51: //set the ramp mode parameters [key 0x5A 0xA5, 9 x u16]; replies [status 0 ok, 1 bad key, 2 out of range, 3 a ramp is running]
+            case 0x51: //set the ramp mode parameters [key 0x5A 0xA5, 13 x u16]; replies [status 0 ok, 1 bad key, 2 out of range, 3 a ramp is running]
+                       //(values 10-13 all 0 = a protocol 7 app sending 9 values: the contact values are kept)
                 if(!TxBusy()){
-                    unsigned int rv[9];
+                    unsigned int rv[13];
                     int i;
                     cTX->Command = 0x51;
                     if(cRX->Data[0] != REMOTE_KEY0 || cRX->Data[1] != REMOTE_KEY1){
                         cTX->Data[0] = 1;
                     }
                     else{
-                        for(i = 0; i < 9; i++) rv[i] = cRX->Data[2 + i * 2] | (cRX->Data[3 + i * 2] << 8);
+                        for(i = 0; i < 13; i++) rv[i] = cRX->Data[2 + i * 2] | (cRX->Data[3 + i * 2] << 8);
                         cTX->Data[0] = RemoteRampSet(rv);
                     }
                     TxSend();
@@ -324,10 +326,21 @@ static int HandleCommand(void){
                     done = 1;
                 }
                 break;
-            case 0x53: //ramp mode status; replies [state 0 off/1 idle/2 ramp/3 peak/4 cool/5 lockout, ready, u16 ms left, u16 target C, u16 highest temperature C, u16 actual C]
+            case 0x53: //ramp mode status; replies [state 0 off/1 idle/2 ramp/3 peak/4 cool/5 lockout, ready, u16 ms left, u16 target C, u16 highest temperature C, u16 actual C,
+                       //(protocol 8) u16 k 0.001/s, u16 wipe ripple %, flags (1 A armed, 2 B armed, 4 contact, 8 lift blank, 16 wipe hold), last event (1 A, 2 B, 3 wipe),
+                       //u16 automatic starts, u16 wipes ignored, u16 room 0.5 C]
                 if(!TxBusy()){
                     unsigned int ro[6];
+                    unsigned int rd[7];
                     RemoteRampStatus(ro);
+                    RemoteRampDetect(rd);
+                    Put16(10, rd[0]);
+                    Put16(12, rd[1]);
+                    cTX->Data[14] = rd[2];
+                    cTX->Data[15] = rd[3];
+                    Put16(16, rd[4]);
+                    Put16(18, rd[5]);
+                    Put16(20, rd[6]);
                     cTX->Command = 0x53;
                     cTX->Data[0] = ro[0];
                     cTX->Data[1] = ro[4];
@@ -335,6 +348,32 @@ static int HandleCommand(void){
                     Put16(4, ro[2]);
                     Put16(6, ro[3]);
                     Put16(8, ro[5]);
+                    TxSend();
+                    done = 1;
+                }
+                break;
+            case 0x54: //ramp capture [0 status, 1 clear and record again, 2 freeze now]; replies [state 0 recording/1 event seen/2 frozen, reason 1 manual start/2 automatic start/3 wipe ignored/4 app,
+                       //u16 records, u16 index of the event record, u16 room 0.5 C]
+                if(!TxBusy()){
+                    unsigned int ro[5];
+                    RemoteRampCapture(cRX->Data[0], ro);
+                    cTX->Command = 0x54;
+                    cTX->Data[0] = ro[0];
+                    cTX->Data[1] = ro[1];
+                    Put16(2, ro[2]);
+                    Put16(4, ro[3]);
+                    Put16(6, ro[4]);
+                    TxSend();
+                    done = 1;
+                }
+                break;
+            case 0x55: //read ramp capture records [u16 first]; replies [u16 first, n, n x 8 bytes] (n <= 7): u16 raw temperature 0.5 C, u16 filtered 1/16 C,
+                       //duty /255, k 0.001/s (max 255), wipe ripple % (max 255), state (bits 0-2) + detector flags << 3
+                if(!TxBusy()){
+                    int f = cRX->Data[0] | (cRX->Data[1] << 8);
+                    cTX->Command = 0x55;
+                    Put16(0, f);
+                    cTX->Data[2] = (UINT8)RemoteRampCaptureRead(f, 7, &cTX->Data[3]);
                     TxSend();
                     done = 1;
                 }

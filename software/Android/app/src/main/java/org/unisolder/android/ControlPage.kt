@@ -106,6 +106,8 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
         minusButton.setOnClickListener { stepTemp(-1) }
         row.addView(minusButton)
         tempBar = SeekBar(act)
+        tempBar.thumbTintList = android.content.res.ColorStateList.valueOf(0xFFFFC107.toInt())
+        tempBar.progressTintList = android.content.res.ColorStateList.valueOf(0xFFFFC107.toInt())
         tempBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
                 val s = state ?: return

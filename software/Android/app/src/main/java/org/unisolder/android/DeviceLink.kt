@@ -41,7 +41,14 @@ class Pid(
 
 /** Answer of the application info command. protocol >= 1 means the firmware supports remote control and settings backup. */
 /** Ramp mode status (firmware protocol 7): state 0 off, 1 idle, 2 ramp, 3 peak, 4 cool down, 5 lockout. */
-class RampStatus(val state: Int, val ready: Boolean, val msLeft: Int, val target: Int, val highest: Int, val actual: Int)
+class RampStatus(val state: Int, val ready: Boolean, val msLeft: Int, val target: Int, val highest: Int, val actual: Int,
+                 /** protocol 8: contact detector. k in 0.001/s, ripple %, flags (1 cooling detector armed, 2 duty detector armed, 4 contact,
+                  *  8 blank after lift, 16 wipe ignored), last automatic event (1 start by cooling, 2 start by duty, 3 wipe ignored) */
+                 val k: Int = 0, val ripple: Int = 0, val flags: Int = 0, val lastEvent: Int = 0,
+                 val autoStarts: Int = 0, val wipes: Int = 0, val room2: Int = 0)
+
+/** Ramp capture state (protocol 8, command 0x54). */
+class RampCaptureInfo(val state: Int, val reason: Int, val records: Int, val eventIndex: Int, val room2: Int)
 
 class AppInfo(val minor: Int, val major: Int, val board: Int, val protocol: Int) {
     val boardName: String get() = if (board == 1) "5.2C" else "5.2"
@@ -684,20 +691,24 @@ class DeviceLink(private val ctx: Context) {
 
     // ---- ramp mode (firmware protocol 7) ----
 
-    /** The 9 ramp parameters: idle C, peak C, rate C/s, dwell 0.1 s, lockout s, idle time-out min, contact duty jump %, contact dip 0.5 C, ready limit C. */
-    fun getRampPars(): IntArray? {
+    /**
+     * The ramp parameters: idle C, peak C, rate C/s, dwell 0.1 s, lockout s, idle time-out min, contact duty jump %, contact dip 0.5 C, ready limit C,
+     * and with protocol 8 also: cooling constant 0.001/s, blank after lift s, wipe ripple %, automatic start (0 off, 1 cooling, 2 cooling + duty).
+     * n = 9 (protocol 7) or 13 (protocol 8).
+     */
+    fun getRampPars(n: Int = RAMP_PARS): IntArray? {
         val r = send(byteArrayOf(CMD_RAMP_GET), 1000) ?: return null
         if (r.u(0) != 0) return null
-        return IntArray(RAMP_PARS) { r.u16(1 + it * 2) }
+        return IntArray(n) { r.u16(1 + it * 2) }
     }
 
     /** 0 done, 1 bad key, 2 out of range, 3 a ramp is running, null no answer. */
     fun setRampPars(v: IntArray): Int? {
-        val b = ByteArray(3 + RAMP_PARS * 2)
+        val b = ByteArray(3 + v.size * 2)
         b[0] = CMD_RAMP_SET
         b[1] = 0x5A
         b[2] = 0xA5.toByte()
-        for (i in 0 until RAMP_PARS) {
+        for (i in v.indices) {
             b[3 + i * 2] = (v[i] and 255).toByte()
             b[4 + i * 2] = ((v[i] shr 8) and 255).toByte()
         }
@@ -713,7 +724,29 @@ class DeviceLink(private val ctx: Context) {
 
     fun rampStatus(): RampStatus? {
         val r = send(byteArrayOf(CMD_RAMP_STATUS), 1000) ?: return null
-        return RampStatus(r.u(0), r.u(1) != 0, r.u16(2), r.u16(4), r.u16(6), r.u16(8))
+        return RampStatus(r.u(0), r.u(1) != 0, r.u16(2), r.u16(4), r.u16(6), r.u16(8),
+            r.u16(10), r.u16(12), r.u(14), r.u(15), r.u16(16), r.u16(18), r.u16(20))
+    }
+
+    /** Ramp capture (protocol 8): cmd 0 status, 1 clear and record again, 2 freeze now. */
+    fun rampCapture(cmd: Int): RampCaptureInfo? {
+        val r = send(byteArrayOf(CMD_RAMP_CAPTURE, cmd.toByte()), 1000) ?: return null
+        return RampCaptureInfo(r.u(0), r.u(1), r.u16(2), r.u16(4), r.u16(6))
+    }
+
+    /** Reads all capture records (8 bytes each, oldest first), 7 per request. Null when the station stops answering. */
+    fun readRampCapture(records: Int): ByteArray? {
+        val out = ByteArray(records * 8)
+        var first = 0
+        while (first < records) {
+            val r = send(byteArrayOf(CMD_RAMP_CAPTURE_READ, (first and 255).toByte(), ((first shr 8) and 255).toByte()), 1000) ?: return null
+            if (r.u16(0) != first) return null
+            val n = r.u(2)
+            if (n == 0) break
+            for (i in 0 until n * 8) if (first * 8 + i < out.size) out[first * 8 + i] = r[3 + i]
+            first += n
+        }
+        return out
     }
 
     fun restartDevice() {
@@ -738,6 +771,9 @@ class DeviceLink(private val ctx: Context) {
         const val CMD_PID_SLOT_READ: Byte = 0x44
         const val CMD_PID_SLOT_WRITE: Byte = 0x45
         const val RAMP_PARS = 9
+        const val RAMP_PARS8 = 13
+        const val CMD_RAMP_CAPTURE: Byte = 0x54
+        const val CMD_RAMP_CAPTURE_READ: Byte = 0x55
         const val CMD_RAMP_GET: Byte = 0x50
         const val CMD_RAMP_SET: Byte = 0x51
         const val CMD_RAMP_CONTROL: Byte = 0x52

@@ -18,7 +18,7 @@ namespace UniSolder
         private readonly Label stateLabel = new Label();
         private readonly Label tempLabel = new Label();
         private readonly Label infoLabel = new Label();
-        private readonly TrackBar tempBar = new TrackBar();
+        private readonly YellowTrackBar tempBar = new YellowTrackBar();
         private readonly Button minusButton = new Button();
         private readonly Button plusButton = new Button();
         private readonly Button[] presetButtons = new Button[4];

@@ -1,6 +1,6 @@
 # Ramp mode: design note (firmware, step 1 and 2)
 
-Status: step 1 written and tested on hardware (3 tests, 2026-11-19); step 2 design updated with the cooling detector (2026-11-19). Branch `remote-control` only.
+Status: step 1 written and tested on hardware (3 tests, 2026-11-19). Step 2b written 2026-11-20 (protocol 8, see 2.6), simulated on the PC, waiting for the hardware test. Branch `remote-control` only.
 
 Decisions by the user (2026-11-19): one ramp + one dwell in version 1; idle temperature applies in the stand; peak maximum 350 C is fine; **no power cap below the existing 130 W limit** (the power cap parameter and the PID.c change were dropped).
 Goal: a separate **ramp mode** in the station. Outside this mode the station behaves exactly as it does today.
@@ -113,6 +113,19 @@ Both detectors start the same RAMP state. Common points:
 - **Brass wool (DECIDED 2026-11-20, user: option 1, "for now").** The 310 C logs (`test_logs/2a_310C_*.csv`) show brass wool drawing about 5x more heat than a small pad, and the user expects the same with the heater off. So no threshold can separate a wipe from a pad. Fallback: **blank after lift**. Contact detection is ignored for a set time after the iron leaves the stand (`FNAP` goes from 0 to 1), to cover the wipe that usually follows. The timer restarts on every lift. Known limitation, accepted: a wipe later on, without putting the iron back in the stand first, still starts a ramp (harmless: the tip heats to the peak in the wool, then the lockout runs). Rejected for now: knob press to arm, and "first contact after a lift is the wipe".
 - **The numbers are not guessed**: step 2a records duty, filtered temperature, CJ temperature and computed k at 20 ms during about 10 real contacts per case (pad, ground plane, and the false cases above), with a small capture buffer in the firmware that the app reads back if the 5 Hz recorder is too slow. The thresholds are chosen from that data.
 - New parameter (10th): **contact: cooling constant**, unit 0.001/s, range 5..50, default 16. Changes the EEPROM format again (new marker; older formats still read), decided at step 2b.
+
+### 2.6 Step 2b as built (2026-11-20, protocol 8)
+Written in `ramp_core.h` (`RampDetect`), called every 20 ms tick in IDLE and LOCKOUT. Differences from the plan above, found with a PC simulation (stubs, a thermal model with sensor noise, and test 3 replayed at 50 Hz):
+- **Heater-off blanking is 5 s, not 3 s.** In test 3 the post-heater drop still gave k = 0.020 at 3 s and 0.015 at 3.2 s: with 3 s it gave a false contact.
+- **Hysteresis**: once a contact has begun it holds while k >= threshold - 0.003 (in test 3 the first contact rose slowly and flickered around 0.016).
+- **Contact during the lift blank** sets the wipe hold: that contact must end (0.5 s without contact) before a new one counts. Without this a wipe that lasts past the blank time started a ramp.
+- **Wipe check (ripple)**: the rate in 0.1 s steps (sums of 5 raw samples) over the last 0.9 s; ripple = standard deviation above the noise floor / mean rate. The noise floor is the variance learned while the tip cools freely (noise and strokes add as variances). The check uses the mean ripple over the second half second of contact, so with the check on a start needs 1 s of contact (latency about 1.5 s). Simulation: pad contacts 20 of 20 started; simulated 3 Hz strokes were caught in 6-7 of 10 (the rest started a ramp in the wool). Default 30 %, 0 = off. **This is a first guess**; the real value comes from captures.
+- Detector B (duty, tip regulated at idle) is built but only active with automatic start = 2. The 310 C logs show it cannot tell a small pad from noise.
+- New parameters 10-13: cooling constant (default 16 = 0.016/s), blank after lift (3 s), wipe ripple (30 %), automatic start (0 off, **1 cooling detector = default**, 2 also duty). Duty jump default 12 -> 5 %, dip 5 -> 3 (x 0.5 C). EEPROM mark 0xD5 (13 values; 0xD4 and 0xD3 still read; old contact defaults are replaced by the new ones).
+- Display: READY AUTO when automatic start is on, WIPE IGNORED while the wipe hold is active.
+- **Capture buffer** (for step 2a at 20 ms): 500 records x 8 bytes (10 s, 4 KB RAM): raw temperature (0.5 C), filtered (1/16 C), duty /255, k, ripple, state + detector flags. Recording in ramp mode; it freezes 2 s after a start (manual or automatic) or an ignored wipe; the app reads it and saves a CSV (time 0 = the event) next to the recordings.
+
+Protocol 8: 0x50/0x51 carry 13 values (a protocol 7 app reads 9; a 9 value write leaves values 10-13 as they are), 0x53 adds k, ripple, flags, last event, counters and the room temperature (bytes 10-21), 0x54 capture control/status [0 status, 1 record again, 2 freeze], 0x55 read records [u16 first] -> [u16 first, n, n x 8 bytes].
 
 ### 2.5 No phone needed, no heartbeat
 The review prompt had a 5 s disconnect fail-safe because the phone ran the ramp. Here the station owns the state machine, so the phone is only an editor and viewer. A lost connection changes nothing; the station-side limits (time limits, abort, idle time-out) are the safety net.
