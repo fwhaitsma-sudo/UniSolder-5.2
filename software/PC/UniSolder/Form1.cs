@@ -30,6 +30,7 @@ namespace UniSolder
         {
             Disposed += Form1_Disposed;
             InitializeComponent();
+            Theme.ApplyIcon(this);
             SSComm.Log.MessageLogged += Log_MessageLogged;
             logStatusLabel.Text = "Log: " + SSComm.Log.FilePath;
 

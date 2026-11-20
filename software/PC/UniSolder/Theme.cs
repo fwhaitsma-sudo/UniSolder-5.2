@@ -13,6 +13,19 @@ namespace UniSolder
     /// </summary>
     static class Theme
     {
+        private static Icon appIcon;
+
+        /// <summary>Gives a window the icon of the program (the one built into the exe), so title bar and taskbar match.</summary>
+        public static void ApplyIcon(Form f)
+        {
+            try
+            {
+                if (appIcon == null) appIcon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+                if (appIcon != null) f.Icon = appIcon;
+            }
+            catch (Exception) { }
+        }
+
         public static readonly Color Bg = Color.FromArgb(16, 16, 18);
         public static readonly Color Card = Color.FromArgb(28, 28, 32);
         public static readonly Color Field = Color.FromArgb(36, 36, 42);

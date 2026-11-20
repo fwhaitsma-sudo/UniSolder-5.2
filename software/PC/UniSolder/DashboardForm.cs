@@ -30,6 +30,7 @@ namespace UniSolder
             WindowState = FormWindowState.Maximized;
             KeyPreview = true;
             ShowInTaskbar = true;
+            Theme.ApplyIcon(this);
 
             var col = new TableLayoutPanel();
             col.Dock = DockStyle.Fill;
