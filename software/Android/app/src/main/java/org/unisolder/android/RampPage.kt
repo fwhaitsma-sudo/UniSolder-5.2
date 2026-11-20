@@ -500,8 +500,17 @@ class RampPage(private val act: Activity, private val link: DeviceLink, private 
                 } else {
                     io.execute {
                         val r = link.rampSlotWrite(sl.slot, name, e.first, e.second)
+                        val chk = if (r == 0) link.rampSlotRead(sl.slot) else null
+                        val same = chk != null && chk.count == e.first && chk.name == name &&
+                            (0 until e.first * 3).all { chk.steps[it] == e.second[it] }
+                        AppLog.info("Ramp slot " + (sl.slot + 1) + " save: sent '" + name + "' " + e.first + ":" + e.second.joinToString(",") +
+                            " | status " + r + " | read back " + (if (chk == null) "-" else "'" + chk.name + "' " + chk.count + ":" + chk.steps.joinToString(",")) + " | same " + same)
                         ui.post {
-                            if (r == 0) refreshSlotsAndSteps("Saved in slot " + (sl.slot + 1))
+                            if (r == 0 && !same) {
+                                Toast.makeText(act, "The station said OK but slot " + (sl.slot + 1) + " holds other values: not stored", Toast.LENGTH_LONG).show()
+                                refreshSlotsAndSteps(null)
+                            }
+                            else if (r == 0) refreshSlotsAndSteps("Saved in slot " + (sl.slot + 1))
                             else Toast.makeText(act, if (r == 2) "A step is out of range (1-6 steps, 100-350 °C, rate 0.1-100 °C/s, hold up to 600 s)" else "The station did not accept it", Toast.LENGTH_LONG).show()
                         }
                     }
