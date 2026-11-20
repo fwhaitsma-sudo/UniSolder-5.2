@@ -71,6 +71,7 @@ Ramp target in integer math (C89, no FPU): `target = idle + (n * rate) / 50`, wi
 | contact: duty jump | % | 3..40 | 12 (step 2) |
 | contact: temperature dip | 0.5 C | 2..20 | 5 (step 2) |
 | contact: cooling constant | 0.001/s | 5..50 | 16 (step 2, proposed, see 2.4 A) |
+| contact: blank after lift | s | 0..10 | 3 (step 2, see 2.4 brass wool) |
 
 The user decides the real values; the defaults above are the numbers from the review prompt. The peak limits for the polymer capacitor in the example are the user's responsibility (datasheet), not mine. Version 1 has one ramp and one dwell. A step table (preheat, soak, reflow, like the app's profiles) can follow later, the state machine is written so it can loop over steps.
 
@@ -95,7 +96,7 @@ Data from test 3 (`test_logs/ramp_test_3_contact.csv`, C245, 2026-11-19, two con
 | heater just switched off, 12.5-15 s / 31-33 s | ~265 C | 5.6-6.6 C/s | ~0.023-0.027 (false!) |
 
 Proposed rule (thresholds to be confirmed in step 2a):
-1. **Armed** when: ramp mode, iron out of the stand, state IDLE or LOCKOUT, and `PIDDutyFull == 0` for at least **3 s**. The 3 s blanking hides the fast drop right after the heater switches off (heat spreading from the heater into the tip), which looks exactly like contact (last row of the table).
+1. **Armed** when: ramp mode, iron out of the stand **for at least the lift blank time** (default 3 s, see below), state IDLE or LOCKOUT, and `PIDDutyFull == 0` for at least **3 s**. The 3 s blanking hides the fast drop right after the heater switches off (heat spreading from the heater into the tip), which looks exactly like contact (last row of the table).
 2. **Rate**: ring buffer of 50 filtered temperatures (`TAvgP`, 0.5 C units, one per tick = 1 s). Rate = (mean of the oldest 25 - mean of the newest 25) per 0.5 s. Integer only, 200 bytes RAM. (A least-squares slope is better but not needed for a 2x difference.)
 3. **Room temperature**: `CJTemp` (0.5 C units). If there is no cold junction sensor (`CJTemp == -273*2`) use 25 C.
 4. **Contact** when `rate_per_s * 1000 >= k_threshold * (T - T_room)` for **25 ticks in a row (0.5 s)**. Default `k_threshold` = 16 (= 0.016/s, halfway between 0.011 and 0.021). Expected latency 1-1.5 s, about the same as the user's own reaction in test 3.
@@ -109,6 +110,7 @@ Proposed rule (thresholds to be confirmed in step 2a):
 Both detectors start the same RAMP state. Common points:
 - Feeding solder wire also draws heat and will trigger. That is accepted for this mode; the lockout and the knob abort are the safeguards.
 - **Things that may also raise k without real pad contact**, to be recorded in step 2a before the threshold is final: putting the iron in the stand (metal stand touching the tip; stand detection should block this anyway), wiping on a wet sponge or brass wool, waving the iron through the air, large copper area vs small pad. If wiping crosses the threshold, an extra arming condition is needed (for example: only after the iron was lifted from the stand, or within a window after a knob press).
+- **Brass wool (DECIDED 2026-11-20, user: option 1, "for now").** The 310 C logs (`test_logs/2a_310C_*.csv`) show brass wool drawing about 5x more heat than a small pad, and the user expects the same with the heater off. So no threshold can separate a wipe from a pad. Fallback: **blank after lift**. Contact detection is ignored for a set time after the iron leaves the stand (`FNAP` goes from 0 to 1), to cover the wipe that usually follows. The timer restarts on every lift. Known limitation, accepted: a wipe later on, without putting the iron back in the stand first, still starts a ramp (harmless: the tip heats to the peak in the wool, then the lockout runs). Rejected for now: knob press to arm, and "first contact after a lift is the wipe".
 - **The numbers are not guessed**: step 2a records duty, filtered temperature, CJ temperature and computed k at 20 ms during about 10 real contacts per case (pad, ground plane, and the false cases above), with a small capture buffer in the firmware that the app reads back if the 5 Hz recorder is too slow. The thresholds are chosen from that data.
 - New parameter (10th): **contact: cooling constant**, unit 0.001/s, range 5..50, default 16. Changes the EEPROM format again (new marker; older formats still read), decided at step 2b.
 
