@@ -10,7 +10,7 @@
  * The tick is the 20 ms MenuTasks tick (50 per second).
  *
  * Start (parameter 12): 0 = knob or app only, 1 = lift the iron from its stand, the profile starts after the start delay
- * (JBC auto-start, default), 2 = pad contact by the cooling of the tip (experimental), 3 = 2 + heater power (experimental).
+ * (JBC auto-start, default). (2 and 3 were the pad contact start, removed 2026-11-20: not reliable in tests.)
  * The knob and the app can always start a profile.
  * Profile: up to RAMP_NSTEP steps; each step ramps the target from the previous step's temperature (the start temperature for
  * step 1) to its own temperature at its rate, then holds it for its hold time. After the last step the heater target is the
@@ -30,13 +30,13 @@
 enum { RS_OFF = 0, RS_IDLE, RS_RAMP, RS_PEAK, RS_COOL, RS_LOCK };
 
 //parameters: 0 idle C, 1-3 not used any more (peak, rate, dwell of the single ramp; kept for older apps), 4 lockout s (from the end of
-//the profile), 5 idle time-out min, 6 contact duty jump %, 7 contact dip 0.5 C, 8 ready limit C (a profile can start when the tip is at
-//most this hot), 9 contact cooling constant 0.001/s, 10 contact blank after lift s, 11 wipe ripple %, 12 start (see above),
+//the profile), 5 idle time-out min, 6-7 not used any more (contact duty jump, dip), 8 ready limit C (a profile can start when the tip is
+//at most this hot), 9-11 not used any more (contact cooling constant, blank after lift, wipe ripple), 12 start (see above),
 //13 start delay 0.1 s, 14 maximum rate 0.1 C/s (no step may be faster), 15 number of steps
 static UINT16 RampP[RAMP_NPAR];
 static const UINT16 RampDef[RAMP_NPAR] = {165, 275, 45, 11,  5, 10,  5, 3, 200, 16,  3,  30, 1,  30,   40, 2};
 static const UINT16 RampMin[RAMP_NPAR] = {100, 110,   5,   0,  0,  1,  3,  2, 110,  5,  0,   0, 0,   0,    5, 1};
-static const UINT16 RampMax[RAMP_NPAR] = {340, 350, 100, 100, 60, 60, 40, 20, 340, 50, 10, 200, 3, 100, 1000, RAMP_NSTEP};
+static const UINT16 RampMax[RAMP_NPAR] = {340, 350, 100, 100, 60, 60, 40, 20, 340, 50, 10, 200, 1, 100, 1000, RAMP_NSTEP};
 
 //profile steps: temperature C, rate 0.1 C/s, hold 0.1 s. Default (tin-lead, Kyocera AVX TCJ D-case, design note 2.7):
 //preheat 190 C at 2 C/s, soak 20 s; reflow 240 C at 2 C/s, peak 5 s.
@@ -106,6 +106,7 @@ static void RampLoad(void){
             v[12] = RampDef[12];
             if(v[8] > RampDef[8]) v[8] = RampDef[8];
         }
+        if(v[12] > 1) v[12] = RampDef[12];          //contact start (2, 3) removed: lift start
     }
     if(EEPRead(RAMP_STEP_ADDR, 0, 1) == RAMP_STEP_MARK){
         UINT8 sb[RAMP_NSTEP * 6];
@@ -138,233 +139,6 @@ static void RampSave(void){
     }
 }
 
-//---- contact detection (step 2, design note 2.4) and the 20 ms capture buffer ----
-//Detector A (heater off, tip above its target): k = cooling rate / (T - T_room) in 0.001/s, contact when k >= RampP[9].
-//Detector B (heater regulating at idle, only with start 3): duty jump >= RampP[6] % or dip >= RampP[7] x 0.5 C against
-//the settled baseline.
-//Contact must last 25 ticks (0.5 s). It is ignored for RampP[10] s after the iron leaves its stand (brass wool wipe).
-//Wipe check (A only, RampP[11] > 0): the cooling rate in 0.1 s steps over the last second. A wipe is a series of strokes, so the
-//rate jumps up and down: mean deviation / mean rate >= RampP[11] % is taken as a wipe and ignored until there has been no
-//contact for 0.5 s. The thresholds are first guesses: the capture buffer is there to set them from real data.
-#define CD_N        50      //1 s of ticks
-#define CD_CONFIRM  25      //0.5 s
-#define CD_HEATOFF  250     //5 s: right after the heater stops the sensor cools fast as the heat spreads into the tip (test 3: k 0.036 after 1 s,
-                            //0.025 after 2 s, 0.020 after 3 s, 0.015 after 3.2 s), which looks like contact
-#define CAP_N       500     //10 s of ticks, 8 bytes each
-#define CAP_POST    100     //ticks recorded after the event (2 s)
-
-static int CdT16[CD_N];         //DispTemp (1/16 C, RC filtered)
-static INT16 CdRaw[CD_N];       //PIDVars[0].CTemp[0] (0.5 C, unfiltered)
-static int CdPos, CdFill;
-static int CdHeatOff;           //ticks with the heater demand at 0
-static int CdLift;              //ticks since the iron left its stand
-static int CdCont;              //ticks in a row with contact
-static int CdQuiet;             //ticks in a row without contact
-static int CdSettled;           //ticks the tip has been regulated at idle (detector B)
-static INT32 CdBase;            //duty baseline, 0.1 % x 16
-static INT32 CdDAvg;            //short duty average, 0.1 % x 16
-static UINT8 CdWipeHold;
-static int CdK;                 //last k, 0.001/s
-static int CdRip;               //last wipe ripple, %
-static INT32 CdRipSum;          //sum of the ripple values since the contact began (the decision uses the mean)
-static INT32 CdNoise = -1;      //variance of the 0.1 s rates while cooling freely (noise floor), (C/s)^2 x 64; -1 = not known yet
-static INT32 CdDev;             //variance now, (C/s)^2 x 64
-static UINT8 CdFlags;           //bit 0 A armed, 1 B armed, 2 contact now, 3 blank after lift, 4 wipe hold
-static UINT8 CdLast;            //last automatic event: 0 none, 1 start by A, 2 start by B, 3 wipe ignored
-static UINT16 CdStarts, CdWipes;
-static int CdRoom2 = 50;        //room (cold junction) temperature, 0.5 C
-
-static UINT8 Cap[CAP_N][8];
-static int CapPos;              //next record
-static int CapFill;
-static UINT8 CapState;          //0 recording, 1 recording the last 2 s after an event, 2 frozen
-static int CapPost;
-static UINT8 CapReason;         //1 manual start, 2 automatic start, 3 wipe ignored, 4 frozen by the app
-static int CapSince;            //records after the event
-
-static void CdReset(void){
-    CdPos = 0; CdFill = 0; CdHeatOff = 0; CdCont = 0; CdQuiet = 0; CdSettled = 0;
-    CdBase = 0; CdDAvg = 0; CdWipeHold = 0; CdK = 0; CdRip = 0; CdFlags = 0;
-}
-
-static void CapEvent(UINT8 reason){
-    if(CapState) return;
-    CapState = 1;
-    CapPost = CAP_POST;
-    CapReason = reason;
-    CapSince = 0;
-}
-
-static void CapArm(void){
-    CapState = 0;
-    CapPos = 0;
-    CapFill = 0;
-    CapReason = 0;
-    CapSince = 0;
-}
-
-static int RampISqrt(INT32 v){                  //integer square root (bit by bit, 16 steps)
-    UINT32 r = 0, bit = 1UL << 30, x = (v > 0) ? (UINT32)v : 0;
-    while(bit > x) bit >>= 2;
-    while(bit){
-        if(x >= r + bit){ x -= r + bit; r = (r >> 1) + bit; }
-        else r >>= 1;
-        bit >>= 2;
-    }
-    return (int)r;
-}
-
-static int RampDutyPm(void){                    //heater demand in 0.1 % (0x00FFFFFF = 100 %)
-    UINT32 d = PIDVars[0].PIDDutyFull;
-    return (int)((((d >> 8) & 0xFFFF) * 1000UL) >> 16);
-}
-
-static void CapRecord(int raw, int t16, int dutyPm){
-    UINT8 * r;
-    int v;
-    if(CapState == 2) return;
-    r = Cap[CapPos];
-    r[0] = (UINT8)(raw & 0xFF); r[1] = (UINT8)((raw >> 8) & 0xFF);
-    r[2] = (UINT8)(t16 & 0xFF); r[3] = (UINT8)((t16 >> 8) & 0xFF);
-    v = (dutyPm * 255) / 1000; if(v > 255) v = 255; if(v < 0) v = 0;
-    r[4] = (UINT8)v;
-    v = CdK; if(v > 255) v = 255; if(v < 0) v = 0;
-    r[5] = (UINT8)v;
-    v = CdRip; if(v > 255) v = 255; if(v < 0) v = 0;
-    r[6] = (UINT8)v;
-    r[7] = (UINT8)((RampSt & 7) | ((CdFlags & 31) << 3));
-    CapPos++; if(CapPos >= CAP_N) CapPos = 0;
-    if(CapFill < CAP_N) CapFill++;
-    if(CapState == 1){
-        CapSince++;
-        if(--CapPost <= 0) CapState = 2;
-    }
-}
-
-//One tick of the detectors. Returns 1 when a ramp may start now (contact confirmed, not a wipe, station ready).
-static int RampDetect(int inStand, int ready){
-    int raw = PIDVars[0].CTemp[0];
-    int t16 = DispTemp;
-    UINT32 duty = PIDVars[0].PIDDutyFull;
-    int dutyPm = RampDutyPm();
-    int idle16 = (int)RampP[0] << 4;
-    int i, j, a, b, condA = 0, condB = 0, contact, room16, above;
-    INT32 sOld, sNew, m, dev, S[10];
-    int start = 0, need;
-
-    CdRoom2 = (CJTemp > -100) ? CJTemp : CRTemp;
-    if(CdRoom2 < 0 || CdRoom2 > 120) CdRoom2 = 50;      //no usable room sensor: 25 C
-    room16 = CdRoom2 << 3;
-
-    CdT16[CdPos] = t16;
-    CdRaw[CdPos] = (INT16)raw;
-    CdPos++; if(CdPos >= CD_N) CdPos = 0;
-    if(CdFill < CD_N) CdFill++;
-
-    if(duty == 0){ if(CdHeatOff < 30000) CdHeatOff++; } else CdHeatOff = 0;
-    if(inStand) CdLift = 0; else if(CdLift < 30000) CdLift++;
-
-    CdK = 0;
-    CdRip = 0;
-    if(CdFill >= CD_N){
-        //rate from the oldest and the newest half second (CdPos is the oldest sample now)
-        sOld = 0; sNew = 0;
-        for(i = 0; i < CD_N; i++){
-            a = CdT16[(CdPos + i) % CD_N];
-            if(i < CD_N / 2) sOld += a; else sNew += a;
-        }
-        m = ((sOld - sNew) * 2) / (CD_N / 2);       //1/16 C per s
-        above = t16 - room16;
-        if(m > 0 && above > (20 << 4)){
-            CdK = (int)((m * 1000) / above);
-            if(CdK > 999) CdK = 999;
-        }
-        //wipe ripple: 10 sums of 5 raw samples; the difference of two neighbouring sums is the rate in C/s (0.5 C x 5 per 0.1 s)
-        for(j = 0; j < 10; j++){
-            S[j] = 0;
-            for(i = 0; i < 5; i++) S[j] += CdRaw[(CdPos + j * 5 + i) % CD_N];
-        }
-        //ripple = standard deviation of the 0.1 s rates above the noise floor (variance measured while the tip cooled freely),
-        //relative to the mean rate. Noise and strokes add as variances, so the floor is subtracted as a variance.
-        m = S[1] - S[9];                            //8 steps (the first 0.1 s is left out: it may be before the contact)
-        dev = 0;
-        for(j = 2; j < 10; j++){
-            b = (int)(8 * (S[j - 1] - S[j]) - m);   //8 x deviation, C/s
-            dev += (INT32)b * b;
-        }
-        CdDev = dev / 8;                            //variance x 64
-        if(m > 0){
-            dev = CdDev - ((CdNoise < 0) ? 0 : CdNoise);
-            if(dev < 0) dev = 0;
-            //ripple % = 100 x sqrt(variance) / mean rate, mean rate = m / 8, sqrt(dev) = 8 x sd
-            b = RampISqrt(dev);
-            CdRip = (int)(((INT32)b * 100) / m);
-            if(CdRip > 999) CdRip = 999;
-        }
-        else CdRip = 999;
-    }
-
-    //detector B: duty against the baseline while the tip is regulated at idle
-    a = t16 - idle16;
-    if(duty == 0 || a > (5 << 4) || a < -(5 << 4)) CdSettled = 0;
-    else if(CdSettled < 30000 && (CdSettled > 0 || (a <= 24 && a >= -24))) CdSettled++;
-    if(CdSettled == 1){ CdBase = (INT32)dutyPm << 4; CdDAvg = CdBase; }
-    CdDAvg += (((INT32)dutyPm << 4) - CdDAvg) >> 3;     //short average (about 0.16 s)
-
-    CdFlags = 0;
-    if(!inStand && CdLift < (int)RampP[10] * 50){
-        CdFlags |= 8;
-        //contact during the blank time is the wipe: it must end (0.5 s without contact) before a new contact counts
-        if(RampP[12] >= 2 && CdHeatOff >= CD_HEATOFF && CdFill >= CD_N && CdK >= (int)RampP[9]){
-            CdWipeHold = 1;
-            CdQuiet = 0;
-        }
-    }
-    if(RampP[12] >= 2 && !inStand && !(CdFlags & 8) && CdHeatOff >= CD_HEATOFF && CdFill >= CD_N){
-        CdFlags |= 1;
-        condA = (CdK >= (int)RampP[9] - ((CdCont > 0) ? 3 : 0));      //0.003/s hysteresis once a contact has begun
-    }
-    if(RampP[12] >= 3 && !inStand && !(CdFlags & 8) && CdSettled >= 75){
-        CdFlags |= 2;
-        condB = ((CdDAvg - CdBase) >= (((INT32)RampP[6] * 10) << 4)) || ((idle16 - t16) >= (int)RampP[7] * 8);
-    }
-    if(CdSettled >= 75 && !condB && a <= 24 && a >= -24){
-        CdBase += (((INT32)dutyPm << 4) - CdBase) >> 5;     //slow baseline, only while there is no contact
-    }
-    contact = condA || condB;
-    if((CdFlags & 1) && !condA && CdQuiet >= CD_N){     //free cooling for at least 1 s: learn the noise floor
-        if(CdNoise < 0) CdNoise = CdDev; else CdNoise += (CdDev - CdNoise) >> 5;
-    }
-    if(contact){
-        CdFlags |= 4;
-        if(CdCont == 0) CdRipSum = 0;
-        if(CdCont < 30000) CdCont++;
-        if(CdCont > CD_CONFIRM) CdRipSum += CdRip;     //second half second: the 1 s window is then (almost) all contact
-        CdQuiet = 0;
-    }
-    else{
-        CdCont = 0;
-        if(CdQuiet < 30000 && !(CdFlags & 8 && CdWipeHold && CdK >= (int)RampP[9])) CdQuiet++;
-    }
-    if(CdWipeHold && CdQuiet >= CD_CONFIRM) CdWipeHold = 0;
-    need = (condA && RampP[11]) ? 2 * CD_CONFIRM : CD_CONFIRM;     //with the wipe check the decision takes 1 s of contact
-    if(CdCont == need && need > CD_CONFIRM && !CdWipeHold && CdRipSum / CD_CONFIRM >= (int)RampP[11]){
-        CdWipeHold = 1;
-        CdWipes++;
-        CdLast = 3;
-        CapEvent(3);
-    }
-    if(CdWipeHold) CdFlags |= 16;
-    if(CdCont >= need && !CdWipeHold && ready){
-        CdStarts++;
-        CdLast = condA ? 1 : 2;
-        CdCont = 0;
-        start = 1;
-    }
-    CapRecord(raw, t16, dutyPm);
-    return start;
-}
-
 static void RampLeaveMode(void){
     RampSt = RS_OFF;
     RampPressed = 0;
@@ -389,8 +163,6 @@ static int RampEnter(void){
     RampPeakSeen = 0;
     RampLiftArmed = 0;
     RampWasInStand = 0;
-    CdReset();
-    CdLift = 0;
     CMode = DEFAULT_MENU;
     BeepTicks = 2;
     return 0;
@@ -413,7 +185,6 @@ static void RampStart(void){
     RampN = 0;
     RampPeakSeen = 0;
     RampLiftArmed = 0;
-    CdCont = 0;
     BeepTicks = 2;
 }
 
@@ -474,7 +245,6 @@ static int RampTick(int actual, int inStand, int fault, int menuOpen, int activi
         }
         else if(RampSt == RS_IDLE && RampOk >= 25 && !inStand && !menuOpen){
             RampStart();
-            CapEvent(1);
         }
         else{
             BeepTicks = 6;                                   //not ready, in the stand or cooling
@@ -486,19 +256,8 @@ static int RampTick(int actual, int inStand, int fault, int menuOpen, int activi
     if(RampLiftArmed && ready && RampLiftN >= (int)RampP[13] * 5){
         RampStart();
         RampIdle = 0;
-        CapEvent(2);
         return RampFrom;
     }
-    //contact detection (experimental, start 2 or 3) runs in IDLE and LOCKOUT; it also feeds the capture buffer
-    if(RampSt == RS_IDLE || RampSt == RS_LOCK){
-        if(RampDetect(inStand, ready) && RampP[12] >= 2){
-            RampStart();
-            RampIdle = 0;
-            CapEvent(2);
-            return RampFrom;
-        }
-    }
-    else CapRecord(PIDVars[0].CTemp[0], DispTemp, RampDutyPm());
 
     switch(RampSt){
         case RS_IDLE:
@@ -625,8 +384,7 @@ static void RampHeader(char * o){
     k = RampPutStr(o, k, "RAMP  ");
     switch(RampSt){
         case RS_IDLE:
-            if(CdWipeHold) k = RampPutStr(o, k, "WIPE IGNORED");
-            else if(RampLiftArmed){
+            if(RampLiftArmed){
                 left = (int)RampP[13] * 5 - RampLiftN;
                 if(left > 0){
                     k = RampPutStr(o, k, "START IN ");
@@ -635,7 +393,7 @@ static void RampHeader(char * o){
                 }
                 else k = RampPutStr(o, k, "WAIT");
             }
-            else if(RampOk >= 25) k = RampPutStr(o, k, (RampP[12] == 1) ? "READY LIFT" : ((RampP[12] >= 2) ? "READY AUTO" : "READY"));
+            else if(RampOk >= 25) k = RampPutStr(o, k, (RampP[12] == 1) ? "READY LIFT" : "READY");
             else k = RampPutStr(o, k, (RampActualNow > (int)RampP[8]) ? "COOLING" : "HEATING");
             break;
         case RS_RAMP:
@@ -767,41 +525,3 @@ void RemoteRampStatus(unsigned int * o){
     }
     o[8] = (unsigned int)dl;
 }
-
-//contact detector: o[0] k 0.001/s, o[1] wipe ripple %, o[2] flags, o[3] last automatic event, o[4] automatic starts, o[5] wipes ignored,
-//o[6] room temperature 0.5 C
-void RemoteRampDetect(unsigned int * o){
-    o[0] = (unsigned int)CdK;
-    o[1] = (unsigned int)CdRip;
-    o[2] = CdFlags;
-    o[3] = CdLast;
-    o[4] = CdStarts;
-    o[5] = CdWipes;
-    o[6] = (unsigned int)CdRoom2;
-}
-
-//capture: cmd 0 status, 1 clear and record again, 2 freeze now.
-//o[0] state (0 recording, 1 event seen, 2 frozen), o[1] reason, o[2] records, o[3] index of the event record (0 = oldest), o[4] room 0.5 C
-void RemoteRampCapture(int cmd, unsigned int * o){
-    int e;
-    if(cmd == 1) CapArm();
-    else if(cmd == 2 && CapState != 2){ CapState = 2; CapReason = 4; CapSince = 0; }
-    e = CapFill - 1 - CapSince;
-    if(e < 0) e = 0;
-    o[0] = CapState;
-    o[1] = CapReason;
-    o[2] = (unsigned int)CapFill;
-    o[3] = (unsigned int)e;
-    o[4] = (unsigned int)CdRoom2;
-}
-
-//copy up to n records from index first (0 = oldest) to d (8 bytes each); returns the number copied
-int RemoteRampCaptureRead(int first, int n, unsigned char * d){
-    int i, k, oldest = (CapFill < CAP_N) ? 0 : CapPos;
-    for(i = 0; i < n && first + i < CapFill; i++){
-        int idx = (oldest + first + i) % CAP_N;
-        for(k = 0; k < 8; k++) d[i * 8 + k] = Cap[idx][k];
-    }
-    return i;
-}
-

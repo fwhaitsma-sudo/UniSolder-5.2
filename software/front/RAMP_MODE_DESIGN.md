@@ -75,7 +75,7 @@ Ramp target in integer math (C89, no FPU): `target = idle + (n * rate) / 50`, wi
 
 The user decides the real values; the defaults above are the numbers from the review prompt. The peak limits for the polymer capacitor in the example are the user's responsibility (datasheet), not mine. Version 1 has one ramp and one dwell. A step table (preheat, soak, reflow, like the app's profiles) can follow later, the state machine is written so it can loop over steps.
 
-### 2.4 Contact detection (step 2)
+### 2.4 Contact detection (step 2) - REMOVED 2026-11-20 (not reliable in hardware tests; see 2.7). Kept here as history.
 Runs on the same 20 ms tick, reads `PIDVars[0]` (iron 0 only in v1; with a two-iron adapter the active iron).
 Two detectors, because the tip is in one of two situations when the user touches a pad:
 
@@ -114,7 +114,7 @@ Both detectors start the same RAMP state. Common points:
 - **The numbers are not guessed**: step 2a records duty, filtered temperature, CJ temperature and computed k at 20 ms during about 10 real contacts per case (pad, ground plane, and the false cases above), with a small capture buffer in the firmware that the app reads back if the 5 Hz recorder is too slow. The thresholds are chosen from that data.
 - New parameter (10th): **contact: cooling constant**, unit 0.001/s, range 5..50, default 16. Changes the EEPROM format again (new marker; older formats still read), decided at step 2b.
 
-### 2.6 Step 2b as built (2026-11-20, protocol 8)
+### 2.6 Step 2b as built (2026-11-20, protocol 8) - REMOVED 2026-11-20 together with the capture buffer (0x54/0x55); history only
 Written in `ramp_core.h` (`RampDetect`), called every 20 ms tick in IDLE and LOCKOUT. Differences from the plan above, found with a PC simulation (stubs, a thermal model with sensor noise, and test 3 replayed at 50 Hz):
 - **Heater-off blanking is 5 s, not 3 s.** In test 3 the post-heater drop still gave k = 0.020 at 3 s and 0.015 at 3.2 s: with 3 s it gave a false contact.
 - **Hysteresis**: once a contact has begun it holds while k >= threshold - 0.003 (in test 3 the first contact rose slowly and flickered around 0.016).
@@ -152,6 +152,8 @@ About 63 s in all; the tip is above 179 C for about 50 s (the joint less): insid
 - Validation: steps 100-350 C, rate 0.1 C/s from 1 to the maximum rate, hold up to 600 s; highest step at least idle + 10; ready limit between idle + 10 and highest step - 10.
 
 **Protocol 9:** 0x50/0x51 carry 16 values (a 13 value write from a protocol 8 app keeps values 13-16; a 9 value write keeps 10-16); 0x53 adds step (byte 22), lift start state (byte 23: 0 none, 1 delay, 2 waiting until ready) and u16 delay ms left (24); while running, the u16 ms left is the whole profile. 0x56 read steps -> [0, count, 6 x (u16 C, u16 0.1 C/s, u16 0.1 s)], 0x57 write steps [key, count, 6 x 3 u16] -> [status 0/1/2/3].
+
+**Contact start removed (2026-11-20, user):** after the lift start worked, the experimental pad contact start (2.4, 2.6) was removed from the firmware and the app: detectors, wipe check, capture buffer (4 KB RAM) and commands 0x54/0x55. Start is 0 or 1 (an older 2 or 3 in the EEPROM becomes 1). Parameters 6, 7, 9-11 stay in the 16 value layout but are not used; 0x53 bytes 10-21 are zero. The PC simulations of the detector were removed; `software/front/sim/ramp_profsim.c` stays.
 
 **App:** Ramp page: start, start delay, maximum rate, step table (6 rows, temperature / rate / hold), status with step and time left, "Starting in x s" and "Waiting" for the lift start. The single ramp fields are hidden with protocol 9.
 

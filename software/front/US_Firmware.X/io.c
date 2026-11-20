@@ -124,7 +124,7 @@ static int HandleCommand(void){
                     done = 1;
                 }
                 break;
-            case 0x80: //application info: [version minor, version major, board version, protocol (1 = remote control + settings, 2 = PID save, 3 = live settings 0x40/0x41, 4 = name 0x42/0x43, 5 = saved PID backup 0x44/0x45, 6 = state flag 32: iron in its stand now, 7 = ramp mode 0x50-0x53, state flag 64, 8 = 13 ramp values, contact detector in 0x53, capture 0x54/0x55, 9 = 16 ramp values, profile steps 0x56/0x57, step + lift start in 0x53)]
+            case 0x80: //application info: [version minor, version major, board version, protocol (1 = remote control + settings, 2 = PID save, 3 = live settings 0x40/0x41, 4 = name 0x42/0x43, 5 = saved PID backup 0x44/0x45, 6 = state flag 32: iron in its stand now, 7 = ramp mode 0x50-0x53, state flag 64, 8 = 13 ramp values (contact detector and capture 0x54/0x55, removed again), 9 = 16 ramp values, profile steps 0x56/0x57, step + lift start in 0x53)]
                 if(!TxBusy()){
                     cTX->Command = 0x80;
                     cTX->Data[0] = VERSION_MINOR;
@@ -285,8 +285,8 @@ static int HandleCommand(void){
                     done = 1;
                 }
                 break;
-            case 0x50: //read the ramp mode parameters; replies [status 0, 13 x u16: idle C, peak C, rate C/s, dwell 0.1 s, lockout s, time-out min, duty jump %, dip 0.5 C, ready limit C,
-                       //cooling constant 0.001/s, blank after lift s, wipe ripple %, start 0 knob/1 lift/2 contact/3 contact + power, start delay 0.1 s,
+            case 0x50: //read the ramp mode parameters; replies [status 0, 16 x u16: idle C, 3 unused (single ramp), lockout s, time-out min, 2 unused (contact), ready limit C,
+                       //3 unused (contact), start 0 knob/1 lift, start delay 0.1 s,
                        //maximum rate 0.1 C/s, number of steps] (protocol 7 apps read the first 9, protocol 8 apps the first 13)
                 if(!TxBusy()){
                     unsigned int rv[16];
@@ -328,21 +328,13 @@ static int HandleCommand(void){
                 }
                 break;
             case 0x53: //ramp mode status; replies [state 0 off/1 idle/2 ramp/3 peak/4 cool/5 lockout, ready, u16 ms left, u16 target C, u16 highest temperature C, u16 actual C,
-                       //(protocol 8) u16 k 0.001/s, u16 wipe ripple %, flags (1 A armed, 2 B armed, 4 contact, 8 lift blank, 16 wipe hold), last event (1 A, 2 B, 3 wipe),
-                       //u16 automatic starts, u16 wipes ignored, u16 room 0.5 C, (protocol 9) step 1-6 (0 = not running), lift start 0 none/1 delay/2 waiting
-                       //until ready, u16 ms left of the start delay] (while running, u16 ms left = the whole profile)
+                       //bytes 10-21 zero (were the contact detector of protocol 8, removed), (protocol 9) step 1-6 (0 = not running), lift start 0 none/1 delay/
+                       //2 waiting until ready, u16 ms left of the start delay] (while running, u16 ms left = the whole profile)
                 if(!TxBusy()){
                     unsigned int ro[9];
-                    unsigned int rd[7];
+                    int i;
                     RemoteRampStatus(ro);
-                    RemoteRampDetect(rd);
-                    Put16(10, rd[0]);
-                    Put16(12, rd[1]);
-                    cTX->Data[14] = rd[2];
-                    cTX->Data[15] = rd[3];
-                    Put16(16, rd[4]);
-                    Put16(18, rd[5]);
-                    Put16(20, rd[6]);
+                    for(i = 10; i < 22; i++) cTX->Data[i] = 0;
                     cTX->Data[22] = ro[6];
                     cTX->Data[23] = ro[7];
                     Put16(24, ro[8]);
@@ -353,32 +345,6 @@ static int HandleCommand(void){
                     Put16(4, ro[2]);
                     Put16(6, ro[3]);
                     Put16(8, ro[5]);
-                    TxSend();
-                    done = 1;
-                }
-                break;
-            case 0x54: //ramp capture [0 status, 1 clear and record again, 2 freeze now]; replies [state 0 recording/1 event seen/2 frozen, reason 1 manual start/2 automatic start/3 wipe ignored/4 app,
-                       //u16 records, u16 index of the event record, u16 room 0.5 C]
-                if(!TxBusy()){
-                    unsigned int ro[5];
-                    RemoteRampCapture(cRX->Data[0], ro);
-                    cTX->Command = 0x54;
-                    cTX->Data[0] = ro[0];
-                    cTX->Data[1] = ro[1];
-                    Put16(2, ro[2]);
-                    Put16(4, ro[3]);
-                    Put16(6, ro[4]);
-                    TxSend();
-                    done = 1;
-                }
-                break;
-            case 0x55: //read ramp capture records [u16 first]; replies [u16 first, n, n x 8 bytes] (n <= 7): u16 raw temperature 0.5 C, u16 filtered 1/16 C,
-                       //duty /255, k 0.001/s (max 255), wipe ripple % (max 255), state (bits 0-2) + detector flags << 3
-                if(!TxBusy()){
-                    int f = cRX->Data[0] | (cRX->Data[1] << 8);
-                    cTX->Command = 0x55;
-                    Put16(0, f);
-                    cTX->Data[2] = (UINT8)RemoteRampCaptureRead(f, 7, (unsigned char *)&cTX->Data[3]);
                     TxSend();
                     done = 1;
                 }

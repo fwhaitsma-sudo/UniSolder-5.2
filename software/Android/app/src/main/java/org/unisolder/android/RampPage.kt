@@ -19,7 +19,7 @@ import java.util.concurrent.ExecutorService
  * Ramp mode of the station (firmware protocol 7, commands 0x50-0x53): the station runs idle, ramp, peak dwell, cool down and
  * lockout by itself. This page sets the values, switches the mode on and off, starts or aborts a ramp and shows the state.
  * The phone is only an editor and a viewer: nothing here has to stay connected for the station to finish a ramp.
- * Protocol 8 adds contact detection (automatic start), its values, the detector status and the 20 ms capture buffer (0x54/0x55).
+ * (Protocol 8 had a pad contact start and a 20 ms capture buffer; both were removed again, the app does not use them.)
  * Protocol 9 replaces the single ramp by a step profile (0x56/0x57) and adds the JBC style start: lift the iron, the profile starts
  * after the start delay.
  */
@@ -39,21 +39,12 @@ class RampPage(private val act: Activity, private val link: DeviceLink, private 
     private val fields = ArrayList<EditText>()
     private val fieldPar = ArrayList<Int>()     // index in the station's parameter list for each field
     private var pars = IntArray(DeviceLink.RAMP_PARS)          // as read from the station (9 values, 13 with protocol 8)
-    private val contactBox = LinearLayout(act)
     private val legacyBox = LinearLayout(act)           // single ramp values (protocol 7 and 8)
     private val profileBox = LinearLayout(act)          // start mode, delay, maximum rate and steps (protocol 9)
-    private val autoBox = LinearLayout(act)             // the protocol 8 automatic start field
     private val stepFields = ArrayList<EditText>()      // 6 x (temperature, rate, hold)
     private val stepCount = EditText(act)
     private var stepsLoaded = false
     private val tenths = HashSet<Int>()                 // fields shown in units of 0.1 (dwell, start delay, maximum rate)
-    private val captureBox = LinearLayout(act)
-    private val detectText = TextView(act)
-    private val captureText = TextView(act)
-    private val captureArm = Button(act)
-    private val captureFreeze = Button(act)
-    private val captureSave = Button(act)
-    private var captureBusy = false
     private var inMode = false
     private var visible = false
     private var parsLoaded = false
@@ -73,13 +64,11 @@ class RampPage(private val act: Activity, private val link: DeviceLink, private 
 
     private val pollTick = object : Runnable {
         override fun run() {
-            if (visible && link.connected && !link.busy && protocol() >= 7 && !captureBusy) {
+            if (visible && link.connected && !link.busy && protocol() >= 7) {
                 io.execute {
                     val s = link.rampStatus()
-                    val c = if (protocol() >= 8) link.rampCapture(0) else null
                     ui.post {
                         if (s != null) showStatus(s)
-                        if (c != null) showCapture(c)
                     }
                 }
             }
@@ -178,7 +167,7 @@ class RampPage(private val act: Activity, private val link: DeviceLink, private 
         ph.setTextColor(if (dark) yellow else 0xFF9A7000.toInt())
         ph.setPadding(0, dp(20), 0, dp(4))
         profileBox.addView(ph)
-        addField(profileBox, "Start (0-3)", 12, "1 = lift the iron from its stand, the profile starts after the start delay (default; uses the stand switch, the same one that shows HLD). 0 = knob or app only. 2, 3 = pad contact (experimental, not reliable).")
+        addField(profileBox, "Start (0 or 1)", 12, "1 = lift the iron from its stand, the profile starts after the start delay (default; uses the stand switch, the same one that shows HLD). 0 = knob or app only.")
         addField(profileBox, "Start delay after lifting (seconds)", 13, "0-10, default 3, one decimal. Time to wipe the tip and put it on the pad.", decimal = true)
         addField(profileBox, "Maximum rate (°C per second)", 14, "0.5-100, default 4, one decimal. No step may ramp faster than this.", decimal = true)
         val pi = TextView(act)
@@ -224,69 +213,11 @@ class RampPage(private val act: Activity, private val link: DeviceLink, private 
         }
         col.addView(profileBox)
 
-        // ---- contact detection (protocol 8) ----
-        contactBox.orientation = LinearLayout.VERTICAL
-        val ch = TextView(act)
-        ch.text = "Pad contact start (experimental)"
-        ch.textSize = 18f
-        ch.setTextColor(if (dark) yellow else 0xFF9A7000.toInt())
-        ch.setPadding(0, dp(20), 0, dp(4))
-        contactBox.addView(ch)
-        val ci = TextView(act)
-        ci.text = "When the tip touches a pad, it cools faster than in free air. The station measures this as k = cooling rate / (tip − room temperature) " +
-            "and starts the ramp when k stays high for 0.5 s (1 s with the wipe check) and the station is ready. " +
-            "This works while the heater is off (the tip above idle after a ramp), from 5 s after the heater stopped. " +
-            "Contact in the first seconds after lifting the iron from its stand is taken as the brass wool wipe and ignored until it ends."
-        ci.setTextColor(text)
-        contactBox.addView(ci)
-        autoBox.orientation = LinearLayout.VERTICAL
-        addField(autoBox, "Automatic start (0, 1 or 2)", 12, "0 = off (knob or Start only), 1 = on, by the cooling of the tip (default), 2 = also by the heater power when the tip is held at idle (weak signal for small pads).")
-        contactBox.addView(autoBox)
-        addField(contactBox, "Contact: cooling constant (× 0.001 per second)", 9, "5-50, default 16. Free cooling measured 8-11, pad contact 21-25 (C245).")
-        addField(contactBox, "Blank after lifting the iron (seconds)", 10, "0-10, default 3. Contact in this time after the iron leaves its stand is the wipe and is ignored until it ends. Uses the stand switch (HLD on the display).")
-        addField(contactBox, "Wipe check: ripple (%)", 11, "0-200, default 30, 0 = off. A brass wool wipe is a series of strokes: the cooling rate jumps up and down. A contact with more ripple than this is ignored as a wipe. First guess: set it from captures.")
-        addField(contactBox, "Duty detector: power jump (%)", 6, "3-40, default 5. Only with start 3 (automatic start 2 on older firmware).")
-        addField(contactBox, "Duty detector: temperature dip (× 0.5 °C)", 7, "2-20, default 3. Only with start 3 (automatic start 2 on older firmware).")
-        detectText.setTextColor(text)
-        detectText.setPadding(0, dp(8), 0, 0)
-        contactBox.addView(detectText)
-        col.addView(contactBox)
 
         saveButton.text = "Save values in the station"
         style(saveButton)
         saveButton.setOnClickListener { save() }
         col.addView(saveButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).also { it.topMargin = dp(12) })
-
-        // ---- capture (protocol 8) ----
-        captureBox.orientation = LinearLayout.VERTICAL
-        val caph = TextView(act)
-        caph.text = "Capture (20 ms)"
-        caph.textSize = 18f
-        caph.setTextColor(if (dark) yellow else 0xFF9A7000.toInt())
-        caph.setPadding(0, dp(20), 0, dp(4))
-        captureBox.addView(caph)
-        val capi = TextView(act)
-        capi.text = "The station keeps the last 10 s of tip temperature, heater power, k, ripple and detector state at 50 samples per second. " +
-            "It freezes 2 s after a ramp start (knob, app or automatic) or an ignored wipe. Save writes it as a CSV to the recordings on the Tools tab (time 0 = the event)."
-        capi.setTextColor(text)
-        captureBox.addView(capi)
-        captureText.setTextColor(text)
-        captureText.setPadding(0, dp(6), 0, dp(4))
-        captureBox.addView(captureText)
-        val crow = LinearLayout(act)
-        crow.orientation = LinearLayout.HORIZONTAL
-        captureArm.text = "Record again"
-        captureFreeze.text = "Freeze now"
-        captureSave.text = "Save"
-        for (b in listOf(captureArm, captureFreeze, captureSave)) {
-            style(b)
-            crow.addView(b, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        }
-        captureArm.setOnClickListener { captureCmd(1) }
-        captureFreeze.setOnClickListener { captureCmd(2) }
-        captureSave.setOnClickListener { saveCapture() }
-        captureBox.addView(crow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        col.addView(captureBox)
 
         scroll.addView(col, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         view = scroll
@@ -325,18 +256,11 @@ class RampPage(private val act: Activity, private val link: DeviceLink, private 
         abortButton.isEnabled = ok && inMode
         saveButton.isEnabled = ok
         for (f in fields) f.isEnabled = ok
-        val p8 = link.connected && protocol() >= 8
         val p9 = link.connected && protocol() >= 9
-        contactBox.visibility = if (p8) View.VISIBLE else View.GONE
         legacyBox.visibility = if (p9) View.GONE else View.VISIBLE
         profileBox.visibility = if (p9) View.VISIBLE else View.GONE
-        autoBox.visibility = if (p9) View.GONE else View.VISIBLE
         stepCount.isEnabled = p9
         for (f in stepFields) f.isEnabled = p9
-        captureBox.visibility = if (p8) View.VISIBLE else View.GONE
-        captureArm.isEnabled = p8 && !captureBusy
-        captureFreeze.isEnabled = p8 && !captureBusy
-        captureSave.isEnabled = p8 && !captureBusy
         if (!link.connected) noteText.text = "Not connected."
         else if (protocol() < 7) noteText.text = "This station's firmware has no ramp mode (it needs the ramp mode firmware, protocol 7)."
     }
@@ -493,85 +417,6 @@ class RampPage(private val act: Activity, private val link: DeviceLink, private 
             if (s.highest > 0) sb.append("\nHighest temperature since the start: ").append(s.highest).append("°C")
         }
         noteText.text = sb.toString()
-        if (protocol() >= 8 && s.state != 0) {
-            val d = StringBuilder()
-            d.append("Detector: k ").append(String.format(java.util.Locale.US, "%.3f", s.k / 1000.0)).append("/s")
-            if (s.ripple < 999) d.append(", ripple ").append(s.ripple).append(" %")
-            d.append(", room ").append(String.format(java.util.Locale.US, "%.1f", s.room2 / 2.0)).append("°C\n")
-            d.append(
-                when {
-                    s.flags and 16 != 0 -> "Wipe ignored: waiting until the contact ends"
-                    s.flags and 8 != 0 -> "Blank after lifting the iron"
-                    s.flags and 4 != 0 -> "Contact"
-                    s.flags and 3 != 0 -> "Armed" + (if (s.flags and 1 != 0) " (cooling)" else "") + (if (s.flags and 2 != 0) " (power)" else "")
-                    else -> "Not armed (heater on, in the stand or within 5 s after the heater stopped)"
-                }
-            )
-            d.append("\nAutomatic starts: ").append(s.autoStarts).append(", wipes ignored: ").append(s.wipes)
-            if (s.lastEvent != 0) d.append(", last: ").append(when (s.lastEvent) { 1 -> "start (cooling)"; 2 -> "start (power)"; else -> "wipe ignored" })
-            detectText.text = d.toString()
-        } else detectText.text = ""
     }
 
-    private fun showCapture(c: RampCaptureInfo) {
-        val st = when (c.state) { 0 -> "Recording"; 1 -> "Event seen, recording 2 s more"; else -> "Frozen" }
-        val why = when (c.reason) { 1 -> " (manual start)"; 2 -> " (automatic start)"; 3 -> " (wipe ignored)"; 4 -> " (frozen by the app)"; else -> "" }
-        captureText.text = st + why + ", " + String.format(java.util.Locale.US, "%.1f", c.records / 50.0) + " s in the buffer"
-    }
-
-    private fun captureCmd(cmd: Int) {
-        io.execute {
-            val c = link.rampCapture(cmd)
-            ui.post { if (c != null) showCapture(c) else Toast.makeText(act, "No answer from the station", Toast.LENGTH_SHORT).show() }
-        }
-    }
-
-    /** Freezes the buffer (if it is not yet), reads it and writes a CSV next to the recordings (Tools tab). */
-    private fun saveCapture() {
-        captureBusy = true
-        refreshButtons()
-        captureText.text = "Reading the capture ..."
-        io.execute {
-            var info = link.rampCapture(0)
-            if (info != null && info.state != 2) info = link.rampCapture(2)
-            val data = if (info != null && info.records > 0) link.readRampCapture(info.records) else null
-            var name: String? = null
-            if (info != null && data != null) {
-                try {
-                    val dir = java.io.File(act.filesDir, "sessions")
-                    dir.mkdirs()
-                    val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(java.util.Date())
-                    val f = java.io.File(dir, "session-" + stamp + "-capture.csv")
-                    f.bufferedWriter().use { w ->
-                        w.write("time_s,state,actual_C,power_pct,filtered_C,event,k_per_s,ripple_pct,flags,room_C\n")
-                        val ev = info.eventIndex
-                        val n = data.size / 8
-                        for (i in 0 until n) {
-                            val o = i * 8
-                            val raw = (data[o].toInt() and 255) or ((data[o + 1].toInt() and 255) shl 8)
-                            val t16 = (data[o + 2].toInt() and 255) or ((data[o + 3].toInt() and 255) shl 8)
-                            val duty = data[o + 4].toInt() and 255
-                            val k = data[o + 5].toInt() and 255
-                            val rip = data[o + 6].toInt() and 255
-                            val fl = data[o + 7].toInt() and 255
-                            w.write(String.format(java.util.Locale.US, "%.2f,%d,%.1f,%.1f,%.2f,%d,%.3f,%d,%d,%.1f\n",
-                                (i - ev) * 0.02, fl and 7, raw / 2.0, duty * 100.0 / 255.0, t16 / 16.0,
-                                if (i == ev) info.reason else 0, k / 1000.0, rip, fl shr 3, info.room2 / 2.0))
-                        }
-                    }
-                    name = f.name
-                } catch (e: Exception) {
-                    AppLog.warn("Capture save failed: " + e.message)
-                }
-            }
-            val again = link.rampCapture(0)
-            ui.post {
-                captureBusy = false
-                refreshButtons()
-                if (again != null) showCapture(again)
-                if (name != null) Toast.makeText(act, "Saved as " + name + " (Tools tab, Export). Press Record again for the next one.", Toast.LENGTH_LONG).show()
-                else Toast.makeText(act, "Could not read the capture", Toast.LENGTH_LONG).show()
-            }
-        }
-    }
 }
