@@ -152,6 +152,7 @@ static union {
         int NameEdit:1;
         int PinEntry:1;
         int PinEdit:1;
+        int ProfSel:1;
     }f;
 }OLEDFlags;
 
@@ -597,6 +598,10 @@ void OLEDTasks(int powerLost){
                                     }
                                     CMode = DEFAULT_MENU;
                                     break;
+                                case 34: //choose a stored ramp profile
+                                    if(RampSelOpen()) CMode = PROFILE_SELECT;
+                                    else BeepTicks = 12;    //no stored profiles (store them with the app)
+                                    break;
                                 case 30: //name shown at power-up
                                     {
                                         int k;
@@ -740,6 +745,28 @@ void OLEDTasks(int powerLost){
                         break;
                     }
                     OLEDFlags.f.Version = 1;
+                    break;
+                case PROFILE_SELECT: //choose a stored ramp profile: turn = next/previous, press = load, hold 1 s = back
+                    if(BTicks[1].n || EncDiff) ModeTicks = 250;
+                    if(EncDiff){
+                        RampSelStep((EncDiff > 0) ? 1 : -1);
+                        EncDiff = 0;
+                    }
+                    if(BTicks[1].o && !BTicks[1].n){ //button released
+                        if(BTicks[1].o < MENU_HOLD_TICKS){
+                            if(RampSelLoad()){
+                                BeepTicks = 2;
+                                CMode = DEFAULT_MENU;
+                                break;
+                            }
+                            BeepTicks = 12;         //not possible: the message stays on the screen
+                        }
+                        else{
+                            CMode = MENU;
+                            break;
+                        }
+                    }
+                    OLEDFlags.f.ProfSel = 1;
                     break;
                 case NAME_EDIT: //edit the name shown at power-up
                     if(BTicks[1].n || EncDiff) ModeTicks = 250;
@@ -1117,6 +1144,18 @@ void OLEDTasks(int powerLost){
         OLEDInvertXY(24 + 8 * NamePos, 8, 24, 16);
         OLEDPrint68(0, 6, "TURN:CHAR PRESS:NEXT", 0);
         OLEDPrint68(0, 7, "HOLD 1S:SAVE", 0);
+    }
+
+    if(OLEDFlags.f.ProfSel){
+        char l[22];
+        RampSelLine(0, l);
+        OLEDPrint68(0, 0, l, 21);
+        RampSelLine(1, l);
+        OLEDPrintXY816(4, 20, l, 10);
+        RampSelLine(2, l);
+        OLEDPrint68(0, 5, l, 21);
+        OLEDPrint68(0, 6, "TURN:PICK PRESS:LOAD", 0);
+        OLEDPrint68(0, 7, "HOLD 1S:BACK", 0);
     }
 
     if(OLEDFlags.f.Version){

@@ -27,6 +27,7 @@ typedef enum{
     NAME_EDIT,            /*edit the name shown at power-up*/
     PIN_ENTRY,            /*enter the pincode to open the menu*/
     PIN_EDIT,             /*set or clear the pincode*/
+    PROFILE_SELECT,       /*choose a stored ramp profile*/
     STANDBY = 0xFF        /*standby*/
 }T_MENU_MODE;
 

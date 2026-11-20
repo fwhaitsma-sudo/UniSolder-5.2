@@ -9,3 +9,6 @@ The thermal model is invented. (The contact detection simulations were removed w
 
     gcc -std=gnu89 -o ramp_slotsim ramp_slotsim.c -lm
     ./ramp_slotsim               # stored profiles: write, read, load (active slot), change, delete
+
+    gcc -std=gnu89 -o ramp_selsim ramp_selsim.c -lm
+    ./ramp_selsim                # the R.PROFILE menu screen: list, lines, load

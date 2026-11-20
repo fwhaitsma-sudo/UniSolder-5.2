@@ -93,7 +93,7 @@ typedef struct {
 
 #ifndef _PARS_C
 extern const char MenuOrder[24];
-extern const t_ParDef ParDef[34];
+extern const t_ParDef ParDef[35];
 extern char UserName[NAME_LEN + 1];  //name shown at power-up, empty = show the logo
 extern void SaveName(void);
 extern char UserPin[PIN_LEN + 1];    //menu pincode, empty = no pincode

@@ -578,6 +578,92 @@ unsigned int RemoteRampActiveSlot(void){
     return (RampActSlot >= 0) ? (unsigned int)RampActSlot : 0xFFu;
 }
 
+//---- choosing a stored profile in the station menu (R.PROFILE) ----
+static UINT8 RampSelList[RAMP_NSLOT];   //slots that hold a profile
+static int RampSelN, RampSelI;
+static char RampSelName[RAMP_NAME_LEN + 1];
+static unsigned int RampSelCount, RampSelSteps[RAMP_NSTEP * 3];
+static UINT8 RampSelErr;                //1 not valid with the station's values, 2 a profile is running
+
+static void RampSelRead(void){
+    RemoteRampSlotRead(RampSelList[RampSelI], RampSelName, &RampSelCount, RampSelSteps);
+    RampSelErr = 0;
+}
+
+//Lists the stored profiles; returns 0 when there are none. Starts at the active one.
+static int RampSelOpen(void){
+    char nm[RAMP_NAME_LEN + 1];
+    unsigned int c, st[RAMP_NSTEP * 3];
+    int i;
+    RampLoad();
+    RampSelN = 0;
+    RampSelI = 0;
+    for(i = 0; i < RAMP_NSLOT; i++){
+        if(RemoteRampSlotRead(i, nm, &c, st) == 0){
+            if(i == RampActSlot) RampSelI = RampSelN;
+            RampSelList[RampSelN++] = (UINT8)i;
+        }
+    }
+    if(!RampSelN) return 0;
+    RampSelRead();
+    return 1;
+}
+
+static void RampSelStep(int d){
+    if(RampSelN < 2) return;
+    RampSelI += d;
+    if(RampSelI < 0) RampSelI = RampSelN - 1;
+    if(RampSelI >= RampSelN) RampSelI = 0;
+    RampSelRead();
+}
+
+//Loads the shown profile: 1 done, 0 not possible (the reason is shown)
+static int RampSelLoad(void){
+    int r = RemoteRampSlotLoad(RampSelList[RampSelI]);
+    RampSelErr = (r == 3) ? 2 : ((r != 0) ? 1 : 0);
+    return r == 0;
+}
+
+//Screen lines: 0 header (21 characters), 1 name (10), 2 steps or error (21)
+static void RampSelLine(int n, char * o){
+    int k = 0, i;
+    if(n == 0){
+        k = RampPutStr(o, k, "PROFILE ");
+        k = RampPutNum(o, k, RampSelList[RampSelI] + 1);
+        k = RampPutStr(o, k, "  (");
+        k = RampPutNum(o, k, RampSelI + 1);
+        k = RampPutStr(o, k, "/");
+        k = RampPutNum(o, k, RampSelN);
+        k = RampPutStr(o, k, ")");
+        if(RampSelList[RampSelI] == RampActSlot) k = RampPutStr(o, k, " ACT");
+        while(k < 21) o[k++] = ' ';
+        o[21] = 0;
+    }
+    else if(n == 1){
+        for(i = 0; i < RAMP_NAME_LEN && RampSelName[i]; i++) o[i] = RampSelName[i];
+        if(!i){ o[0] = '-'; i = 1; }
+        while(i < RAMP_NAME_LEN) o[i++] = ' ';
+        o[RAMP_NAME_LEN] = 0;
+    }
+    else{
+        if(RampSelErr == 1) k = RampPutStr(o, k, "NOT VALID: CHECK APP");
+        else if(RampSelErr == 2) k = RampPutStr(o, k, "PROFILE RUNNING");
+        else{
+            for(i = 0; i < (int)RampSelCount && k < 21; i++){     //"190 20s>250 5s"
+                if(i) k = RampPutStr(o, k, ">");
+                k = RampPutNum(o, k, RampSelSteps[i * 3]);
+                if(RampSelSteps[i * 3 + 2]){
+                    k = RampPutStr(o, k, " ");
+                    k = RampPutNum(o, k, (RampSelSteps[i * 3 + 2] + 5) / 10);
+                    k = RampPutStr(o, k, "s");
+                }
+            }
+        }
+        while(k < 21) o[k++] = ' ';
+        o[21] = 0;
+    }
+}
+
 //cmd 0 leave, 1 enter, 2 trigger, 3 abort. Returns 0 done, 1 not possible, 3 in menu; the mode is in RemoteRampStatus.
 int RemoteRampControl(int cmd){
     int st = 0;

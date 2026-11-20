@@ -178,7 +178,7 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
         backupTitle.setPadding(0, dp(24), 0, dp(4))
         col.addView(backupTitle)
         val backupNote = TextView(act)
-        backupNote.text = "Backs up all station settings and saved PID values to a file; restoring restarts the station."
+        backupNote.text = "Backs up all station settings, saved PID values and the ramp mode values, active profile and stored profiles to a file; restoring restarts the station."
         col.addView(backupNote)
         saveButton = Button(act)
         saveButton.text = "Save settings to file"
@@ -425,12 +425,13 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
             val s = link.getState()
             val i = info
             val pid = if (data != null && (i?.protocol ?: 0) >= 5) link.readPidSlots() else null
+            val ramp = if (data != null) readRamp(i?.protocol ?: 0) else null
             ui.post {
                 saveButton.isEnabled = link.connected
                 if (data == null) {
                     toast("Could not read the settings from the station")
                 } else {
-                    backupText = BackupFile.format(data, i, s, pid)
+                    backupText = BackupFile.format(data, i, s, pid, ramp)
                     val name = "unisolder-settings-" + SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(Date()) + ".txt"
                     val intent = Intent(Intent.ACTION_CREATE_DOCUMENT)
                     intent.addCategory(Intent.CATEGORY_OPENABLE)
@@ -477,7 +478,7 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
             } else {
                 AlertDialog.Builder(act).setTitle("Restore settings")
                     .setMessage("Write the settings from this file to the station?\n\n" + parsed.summary + "\n\nThe station restarts afterwards.")
-                    .setPositiveButton("Restore") { _, _ -> restore(parsed.data, parsed.pid) }
+                    .setPositiveButton("Restore") { _, _ -> restore(parsed.data, parsed.pid, parsed.ramp) }
                     .setNegativeButton("Cancel", null)
                     .show()
             }
@@ -485,11 +486,48 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
         return true
     }
 
-    private fun restore(data: ByteArray, pid: List<ByteArray>?) {
+    /** Ramp mode values, active steps and stored profiles (call on the io thread); null when the station has no step profiles (protocol < 9). */
+    private fun readRamp(protocol: Int): RampBackup? {
+        if (protocol < 9) return null
+        val p = link.getRampPars(DeviceLink.RAMP_PARS9) ?: return null
+        val st = link.getRampSteps(protocol >= 10) ?: return null
+        var slots: List<RampSlot>? = null
+        if (protocol >= 10) {
+            val l = ArrayList<RampSlot>()
+            for (k in 0 until DeviceLink.RAMP_SLOTS) l.add(link.rampSlotRead(k) ?: return null)
+            slots = l
+        }
+        return RampBackup(p, st.first, st.second, st.slot, slots)
+    }
+
+    /** Writes the ramp part of a backup (io thread). The values and the steps are checked against each other by the station,
+     *  so when one order is refused the other is tried. Stored profiles not in the file are deleted. */
+    private fun writeRamp(r: RampBackup, protocol: Int): Boolean {
+        if (protocol < 9) return true
+        var st = link.setRampPars(r.pars)
+        if (st == 0) st = link.setRampSteps(r.count, r.steps)
+        else if (st == 2) {
+            st = link.setRampSteps(r.count, r.steps)
+            if (st == 0) st = link.setRampPars(r.pars)
+        }
+        if (st != 0) return false
+        if (protocol >= 10 && r.slots != null) {
+            for (k in 0 until DeviceLink.RAMP_SLOTS) {
+                val sl = r.slots.firstOrNull { it.slot == k && it.count > 0 }
+                val res = if (sl != null) link.rampSlotWrite(k, sl.name, sl.count, sl.steps) else link.rampSlotDelete(k)
+                if (res != 0) return false
+            }
+            if (r.active >= 0 && link.rampSlotLoad(r.active) != 0) return false
+        }
+        return true
+    }
+
+    private fun restore(data: ByteArray, pid: List<ByteArray>?, ramp: RampBackup?) {
         restoreButton.isEnabled = false
         io.execute {
             var ok = link.writeSettings(data)
             if (ok && pid != null && (info?.protocol ?: 0) >= 5) ok = link.writePidSlots(pid)
+            if (ok && ramp != null) ok = writeRamp(ramp, info?.protocol ?: 0)
             if (ok) link.restartDevice()
             ui.post {
                 restoreButton.isEnabled = link.connected
@@ -515,10 +553,15 @@ class ControlPage(private val act: Activity, private val link: DeviceLink, priva
 }
 
 /** Text format of the settings backup file. */
-object BackupFile {
-    class Parsed(val data: ByteArray, val summary: String, val pid: List<ByteArray>?)
+/** Ramp mode part of a backup: 16 values, active steps (count, 6 x 3), slot they came from (-1 none), stored profiles (null = not in the file). */
+class RampBackup(val pars: IntArray, val count: Int, val steps: IntArray, val active: Int, val slots: List<RampSlot>?)
 
-    fun format(data: ByteArray, info: AppInfo?, state: DeviceState?, pid: List<ByteArray>? = null): String {
+object BackupFile {
+    class Parsed(val data: ByteArray, val summary: String, val pid: List<ByteArray>?, val ramp: RampBackup?)
+
+    private fun ints(a: IntArray) = a.joinToString(",")
+
+    fun format(data: ByteArray, info: AppInfo?, state: DeviceState?, pid: List<ByteArray>? = null, ramp: RampBackup? = null): String {
         val sb = StringBuilder()
         sb.append("UniSolder settings backup\n")
         sb.append("version=1\n")
@@ -533,7 +576,57 @@ object BackupFile {
             for (slot in pid) for (b in slot) sb.append(String.format(Locale.US, "%02X", b.toInt() and 0xFF))
             sb.append('\n')
         }
+        if (ramp != null) {
+            // ramp=16 values; steps=count;18 values;active slot (-1 none); profileN=name as hex;count;18 values
+            sb.append("ramp=").append(ints(ramp.pars)).append('\n')
+            sb.append("steps=").append(ramp.count).append(';').append(ints(ramp.steps)).append(';').append(ramp.active).append('\n')
+            if (ramp.slots != null) {
+                sb.append("profiles=").append(DeviceLink.RAMP_SLOTS).append('\n')
+                for (sl in ramp.slots) {
+                    if (sl.count == 0) continue
+                    sb.append("profile").append(sl.slot + 1).append('=')
+                    for (c in sl.name) sb.append(String.format(Locale.US, "%02X", c.code and 0xFF))
+                    sb.append(';').append(sl.count).append(';').append(ints(sl.steps)).append('\n')
+                }
+            }
+        }
         return sb.toString()
+    }
+
+    private fun parseInts(s: String, n: Int): IntArray? {
+        val p = s.split(',')
+        if (p.size != n) return null
+        val out = IntArray(n)
+        for (i in 0 until n) out[i] = p[i].trim().toIntOrNull() ?: return null
+        return out
+    }
+
+    /** The ramp lines of a backup, or null when there are none (an older file) or they are damaged. */
+    private fun parseRamp(lines: List<String>): RampBackup? {
+        val rl = lines.firstOrNull { it.startsWith("ramp=") } ?: return null
+        val sl = lines.firstOrNull { it.startsWith("steps=") } ?: return null
+        val pars = parseInts(rl.substring(5), DeviceLink.RAMP_PARS9) ?: return null
+        val sp = sl.substring(6).split(';')
+        if (sp.size != 3) return null
+        val count = sp[0].toIntOrNull() ?: return null
+        val steps = parseInts(sp[1], DeviceLink.RAMP_STEPS * 3) ?: return null
+        val active = sp[2].toIntOrNull() ?: return null
+        var slots: List<RampSlot>? = null
+        if (lines.any { it.startsWith("profiles=") }) {
+            val l = ArrayList<RampSlot>()
+            for (k in 0 until DeviceLink.RAMP_SLOTS) {
+                val pl = lines.firstOrNull { it.startsWith("profile" + (k + 1) + "=") } ?: continue
+                val f = pl.substringAfter('=').split(';')
+                if (f.size != 3 || f[0].length % 2 != 0) return null
+                val name = StringBuilder()
+                for (i in 0 until f[0].length / 2) name.append((f[0].substring(i * 2, i * 2 + 2).toIntOrNull(16) ?: return null).toChar())
+                val c = f[1].toIntOrNull() ?: return null
+                val st = parseInts(f[2], DeviceLink.RAMP_STEPS * 3) ?: return null
+                l.add(RampSlot(k, name.toString(), c, st))
+            }
+            slots = l
+        }
+        return RampBackup(pars, count, steps, active, slots)
     }
 
     fun parse(text: String): Parsed? {
@@ -561,6 +654,11 @@ object BackupFile {
         }
         var summary = lines.filter { it.startsWith("saved=") || it.startsWith("firmware=") }.joinToString("\n")
         if (pid != null) summary += "\nSaved PID values: " + pid.count { it[0].toInt() and 0xFF == 0xC7 } + " iron(s)"
-        return Parsed(out, summary, pid)
+        val ramp = parseRamp(lines)
+        if (ramp != null) {
+            summary += "\nRamp mode values and the active profile (" + ramp.count + " step" + (if (ramp.count == 1) "" else "s") + ")"
+            if (ramp.slots != null) summary += "\nStored profiles: " + ramp.slots.size + " (profiles in the station that are not in the file are deleted)"
+        }
+        return Parsed(out, summary, pid, ramp)
     }
 }
