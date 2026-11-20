@@ -39,18 +39,32 @@ Only what is in the firmware now is listed. Reverted and superseded changes are 
 - **Automatic switching on 5.2C boards:** lifting an iron from its stand makes it the active one. (36e4dd2)
 - **Iron re-identification on switch:** switching irons runs the normal identification again, which fixed intermittent single-iron recognition. (75a1f28)
 
+## Ramp mode (soldering profiles run by the station)
+
+- **RAMP MODE** (menu item, never saved: after power-up the station is always the normal station): the station runs a soldering profile by itself, like JBC's Dynamic Soldering Profiles. It holds the idle temperature (default 165 °C, below the melting point of Sn62) until a profile starts. The knob, sleep, stand-by and HOLDER T do not change the temperature in this mode; it ends after the idle time-out (default 10 minutes) and falls back to the normal sleep logic.
+- **Start by lifting the iron:** the profile starts a set delay after the iron leaves its stand (start delay 0–10 s, default 3 s, time to wipe the tip and put it on the pad). A short knob press, or Start in the app, also starts it. If the tip is above the ready limit (default 200 °C) the station shows WAIT and starts as soon as it has cooled to it. The stand is the same signal as HLD on the display, whatever the HOLDER setting is.
+- **Step profiles:** up to 6 steps, each with a temperature, a rate (°C per second, up to the maximum rate, default 4 °C/s) and a hold time. Each step ramps from the previous temperature and then holds. After the last step the heater goes back to idle and a lockout (default 5 s) runs. Default profile (tin-lead, checked against the Kyocera AVX limits for a TCJ polymer tantalum D-case): 190 °C at 2 °C/s held 20 s, then 250 °C at 2 °C/s held 5 s.
+- **Abort:** a knob press, the app, putting the iron back in its stand or opening the menu stops a running profile.
+- **Display:** the top line shows READY LIFT, START IN 3s, WAIT, the step and the seconds left in the whole profile (for example S1/2 50s HOLD) and LOCKOUT.
+- **Stored profiles:** up to 10 named profiles are kept in the station's EEPROM. The new menu item **R.PROFILE** shows them one at a time (name, steps, ACT for the active one): turn to pick, press to load, hold 1 s to go back. Profiles are stored, loaded and deleted from the app.
+- **Commands (protocol 7–10):** ramp values 0x50/0x51, enter/leave/start/abort 0x52, status 0x53, steps 0x56/0x57, stored profiles 0x58–0x5B. Values are in the free EEPROM area at 384, stored profiles at 2048.
+
 ## Remote control and wireless link
 
 - **Remote control commands:** the station answers USB commands to read its state, set the temperature (same limits as the knob), select a preset, sleep/wake, switch iron, and read/write the settings block (backup and restore).
 - **Settings over USB/Bluetooth (protocol 4):** read all menu settings and change one at a time, applied at once with the same rules as the menu (commands 0x40/0x41), and read/set the power-up name (0x42/0x43). The station refuses while it is in its own menu. INPUT, calibration, instrument info, rotation, buttons, menu down and the pincode stay device-only.
 - **UART2 link for a Bluetooth bridge:** the same commands also work over UART2 (RF4 receive, RF5 transmit, 115200 baud), framed with a CRC. Live data is sent only while the app is sending. Firmware update is only possible over USB.
 - **ESP32 Bluetooth bridge** (`software/esp32/UniSolderBridge`): Bluetooth Classic link between phone and station, protected by a PIN (default 0000, changeable from the app). The workflow "Build ESP32 bridge" builds the file to flash.
+- **Saved PID values (protocol 2):** the PID and Gain values in use for the connected iron can be saved in the station and are applied whenever that iron is identified (8 slots, one per iron ID). "Restore the standard values" forgets them (commands 0x15–0x17).
+- **Backup of the saved PID values (protocol 5):** the saved PID slots can be read and written (commands 0x44/0x45), so the settings backup file includes them.
+- **Iron in its stand** is reported in the state reply (flag 32, protocol 6).
 - **Room sensor glitch filter:** single bad readings of the room temperature sensor (more than about 4 degrees from the running average) are ignored, which removes short spikes in the displayed temperature.
 
 ## Windows application build
 
 - **Build from the solution file** (`UniSolder.sln`, Release). (a242419)
 - **No ClickOnce manifest signing**, so the build succeeds on the CI machine. (3afd75c)
+- **Tabs like the Android app:** Live, Control, PID and Firmware, with the remote control commands and the Control tab. The temperature and PID sliders are yellow.
 - **.NET 10 build:** the Windows application is migrated to .NET 10 (SDK-style projects, HidSharp instead of the old USB layer), with USB communication fixes. A separate workflow, "Windows Unisolder application (.NET 10)", publishes a single-file exe that runs without installing .NET. (68e7b9f)
 
 ## Android application
@@ -58,6 +72,9 @@ Only what is in the firmware now is listed. Reverted and superseded changes are 
 - **Station settings page** (Control tab, needs firmware protocol 4 for the name, 3 for the rest): T1-T4, holder and sleep temperature, sleep and stand-by time, wake up, holder sensor, degrees, brightness, sound and pitch, temperature and display step, sensor filter and the power-up name, in grouped cards. Swipe right or Back closes it.
 - **Android version of the Windows application** (`software/Android`, needs a phone with USB host / OTG): connects to the station over USB and has three tabs. *Live* shows a scrolling temperature chart (set temperature, actual temperature, duty, power, reached, filtered and ADC, each switchable, with pause). *PID* reads and sets Kp, Ki, DGain, OVFGain and Gain. *Firmware* checks a `.hex` file and updates the station through the bootloader, with a confirmation and a progress bar.
 - **Later additions:** *Control* tab (set temperature, presets, sleep, switch iron, station info, settings backup/restore), *Tools* tab (session recording with CSV export, tip health, alerts, bench dashboard), PID step-response analysis and saved PID sets, extra diagnostic chart traces, and a Bluetooth connection with PIN to the ESP32 bridge.
+- **Ramp mode page** (Control tab, button Ramp mode): enter and leave ramp mode, start and abort, live state (step, time left, start delay), the ramp values, the start setting and delay, the maximum rate, a step table, and the profiles stored in the station with Load, Save here (under a name) and Delete.
+- **Settings backup** also holds the saved PID values, the ramp mode values, the active profile and the stored profiles. Restoring writes them back; older backup files leave them as they are.
+- **Yellow accent:** sliders, controls and the firmware update progress bar use the icon's yellow (#FFC107) instead of the system blue.
 - **App icon:** a yellow U that bends into a temperature curve up to a dashed set-temperature line.
 - **Build:** the workflow "Build Android app" builds the APK and publishes it as a GitHub Release. Builds are signed with a fixed key so each can be installed over the previous one.
 
