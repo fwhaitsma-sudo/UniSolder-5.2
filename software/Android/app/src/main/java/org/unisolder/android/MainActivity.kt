@@ -484,6 +484,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
 
         fwProgress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal)
         fwProgress.max = 1
+        fwProgress.progressTintList = ColorStateList.valueOf(Color.rgb(255, 193, 7))   // yellow, like the sliders
         col.addView(fwProgress, LinearLayout.LayoutParams(MATCH, WRAP))
 
         logView = TextView(this)
