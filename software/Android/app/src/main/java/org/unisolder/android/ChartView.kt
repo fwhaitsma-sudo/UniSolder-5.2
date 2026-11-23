@@ -33,6 +33,10 @@ class ChartView(ctx: Context) : View(ctx) {
         Series("Flag", Color.rgb(128, 222, 234), false)
     )
 
+    /** Text in the middle of the chart, for example while no tip is in the iron; null = none. */
+    var notice: String? = null
+        set(v) { if (field != v) { field = v; invalidate() } }
+
     private var count = 0
     private var head = 0
     private val density = resources.displayMetrics.density
@@ -137,6 +141,7 @@ class ChartView(ctx: Context) : View(ctx) {
             var pen = false
             for (i in 0 until count) {
                 val raw = s.data[(oldest + i) % CAPACITY]
+                if (raw.isNaN()) { pen = false; continue }      // no valid reading (tip removed): gap in the trace
                 val x = left + (CAPACITY - count + i) / (CAPACITY - 1f) * w
                 val y: Float
                 if (s.rightAxis) {
@@ -152,6 +157,17 @@ class ChartView(ctx: Context) : View(ctx) {
             canvas.drawPath(path, linePaint)
         }
         canvas.restore()
+        val note = notice
+        if (note != null) {
+            textPaint.textAlign = Paint.Align.CENTER
+            textPaint.color = Color.argb(230, 255, 255, 255)
+            val big = textPaint.textSize
+            textPaint.textSize = big * 1.6f
+            canvas.drawText(note, (left + right) / 2f, top + h * 0.5f, textPaint)
+            textPaint.textSize = big
+            textPaint.color = Color.argb(170, 255, 255, 255)
+            textPaint.textAlign = Paint.Align.LEFT
+        }
     }
 
     companion object {
