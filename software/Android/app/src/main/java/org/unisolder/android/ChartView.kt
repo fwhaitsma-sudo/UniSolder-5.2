@@ -86,7 +86,7 @@ class ChartView(ctx: Context) : View(ctx) {
         var n = 0
         for (i in from until count) {
             val x = d[(oldest + i) % CAPACITY]
-            if (!x.isNaN() && x > MIN_OHM) v[n++] = x
+            if (!x.isNaN() && x > MIN_OHM && x < MAX_OHM) v[n++] = x
         }
         if (n < 3) return
         java.util.Arrays.sort(v, 0, n)
@@ -151,7 +151,7 @@ class ChartView(ctx: Context) : View(ctx) {
                 val y: Float
                 if (s.rightAxis) {
                     // no reading (heater off) leaves a gap in the trace
-                    if (raw <= MIN_OHM || !axInit || axHi <= axLo) { pen = false; continue }
+                    if (raw <= MIN_OHM || raw >= MAX_OHM || !axInit || axHi <= axLo) { pen = false; continue }
                     y = bottom - (raw - axLo) / (axHi - axLo) * h
                     if (y < top - h * 0.1f || y > bottom + h * 0.1f) { pen = false; continue }   // wild reading: no line to nowhere
                 } else {
@@ -179,6 +179,8 @@ class ChartView(ctx: Context) : View(ctx) {
     companion object {
         const val CAPACITY = 500
         private const val MIN_OHM = 0.05f
+        /** a heater of a soldering tip has a few ohm: readings above this (open heater, 1000 ohm and more) are not valid */
+        const val MAX_OHM = 50f
         private const val FIT_SAMPLES = 100
         private val NICE_STEPS = floatArrayOf(0.1f, 0.2f, 0.5f, 1f, 2f, 5f)
     }

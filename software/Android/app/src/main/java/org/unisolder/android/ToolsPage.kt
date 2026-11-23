@@ -241,7 +241,7 @@ class ToolsPage(
         val now = System.currentTimeMillis()
 
         // tip health: the heater resistance is only meaningful while it is measured (not zero)
-        if (s.resistance > 0.05f) {
+        if (s.resistance > 0.05f && s.resistance < ChartView.MAX_OHM) {
             resNow = s.resistance
             resSum += s.resistance
             resCount++
