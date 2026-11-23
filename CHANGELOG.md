@@ -76,6 +76,7 @@ Only what is in the firmware now is listed. Reverted and superseded changes are 
 - **Settings backup** also holds the saved PID values, the ramp mode values, the active profile and the stored profiles. Restoring writes them back; older backup files leave them as they are.
 - **Yellow accent:** sliders, controls and the firmware update progress bar use the icon's yellow (#FFC107) instead of the system blue.
 - **App icon:** a yellow U that bends into a temperature curve up to a dashed set-temperature line.
+- **Tip change in the chart:** while no tip is in the iron (the temperature reading jumps wildly) the traces show a gap and the chart, readout and dashboard say "No tip"; nothing is recorded or counted for tip health meanwhile. The heater resistance axis ignores wild readings (50 ohm and more are not valid).
 - **Build:** the workflow "Build Android app" builds the APK and publishes it as a GitHub Release. Builds are signed with a fixed key so each can be installed over the previous one.
 
 ## Build workflows
