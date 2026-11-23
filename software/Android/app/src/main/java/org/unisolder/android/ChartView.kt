@@ -74,19 +74,24 @@ class ChartView(ctx: Context) : View(ctx) {
         invalidate()
     }
 
-    /** Fits the ohm axis to the samples on screen: the data sits in the band from 25% to 50% of the height. */
+    /**
+     * Fits the ohm axis to the recent samples: the data sits in the band from 25% to 50% of the height. The fit uses the 10th to
+     * 90th percentile of the last [FIT_SAMPLES] samples, so a few wild readings (open heater, contact bounce, tip change) do not
+     * stretch the axis; samples far outside the band are left out of the trace (see [onDraw]).
+     */
     private fun updateOhmAxis(oldest: Int) {
-        var mn = Float.MAX_VALUE
-        var mx = -Float.MAX_VALUE
         val d = ohm.data
-        for (i in 0 until count) {
-            val v = d[(oldest + i) % CAPACITY]
-            if (v > MIN_OHM) {
-                if (v < mn) mn = v
-                if (v > mx) mx = v
-            }
+        val from = maxOf(0, count - FIT_SAMPLES)
+        val v = FloatArray(count - from)
+        var n = 0
+        for (i in from until count) {
+            val x = d[(oldest + i) % CAPACITY]
+            if (!x.isNaN() && x > MIN_OHM) v[n++] = x
         }
-        if (mn > mx) return
+        if (n < 3) return
+        java.util.Arrays.sort(v, 0, n)
+        val mn = v[(n - 1) / 10]
+        val mx = v[(n - 1) * 9 / 10]
         val span = maxOf(mx - mn, 0.4f) * 4f   // the data band is a quarter of the height
         val lo = (mn + mx) / 2f - 0.375f * span
         if (!axInit) {
@@ -148,6 +153,7 @@ class ChartView(ctx: Context) : View(ctx) {
                     // no reading (heater off) leaves a gap in the trace
                     if (raw <= MIN_OHM || !axInit || axHi <= axLo) { pen = false; continue }
                     y = bottom - (raw - axLo) / (axHi - axLo) * h
+                    if (y < top - h * 0.1f || y > bottom + h * 0.1f) { pen = false; continue }   // wild reading: no line to nowhere
                 } else {
                     y = bottom - raw.coerceIn(0f, 520f) / 500f * h
                 }
@@ -173,6 +179,7 @@ class ChartView(ctx: Context) : View(ctx) {
     companion object {
         const val CAPACITY = 500
         private const val MIN_OHM = 0.05f
+        private const val FIT_SAMPLES = 100
         private val NICE_STEPS = floatArrayOf(0.1f, 0.2f, 0.5f, 1f, 2f, 5f)
     }
 }
