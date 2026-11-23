@@ -74,6 +74,16 @@ class DashboardView(ctx: Context, private val onClose: () -> Unit) : FrameLayout
         powerText.text = String.format(Locale.US, "heater %.0f%%", power)
     }
 
+    /** No tip in the iron: the readings are not valid, show only the set temperature. */
+    fun showNoTip(s: Sample) {
+        actual.text = "---"
+        actual.setTextColor(yellow)
+        set.text = String.format(Locale.US, "set %.0f°C", s.set)
+        status.text = "no tip"
+        powerBar.progress = 0
+        powerText.text = ""
+    }
+
     fun showNoData() {
         actual.text = "---"
         status.text = "not connected"

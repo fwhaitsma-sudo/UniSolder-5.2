@@ -59,6 +59,9 @@ class MainActivity : Activity(), DeviceLink.Listener {
     private lateinit var pauseButton: Button
     private var paused = false
     private var sampleCount = 0
+    private var tipOut = false
+    private var lastTemp = Float.NaN
+    private var calm = 0
     private var refAdc = Float.NaN
     private var refWs = 0f
 
@@ -613,6 +616,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
         if (connected) {
             chart.clear()
             refAdc = Float.NaN
+            resetTip()
             if (!link.busy) {
                 loadPid()
                 controlPage.onConnected()
@@ -629,12 +633,41 @@ class MainActivity : Activity(), DeviceLink.Listener {
         }
     }
 
+    /**
+     * Tells whether the tip is out of the iron. The station sends no flag for it, but with the sensor open the temperature
+     * reading jumps wildly (up to over 500 and down to 0). A jump of more than 40 C between two samples (a real tip cannot change
+     * that fast), or a reading outside 1..480 C, marks the tip as removed; it counts as back when 8 samples in a row are calm.
+     */
+    private fun tipAbsent(t: Float): Boolean {
+        val bad = t < 1f || t > 480f || (!lastTemp.isNaN() && Math.abs(t - lastTemp) > 40f)
+        lastTemp = t
+        if (!tipOut) {
+            if (bad) { tipOut = true; calm = 0 }
+        } else if (bad) {
+            calm = 0
+        } else if (++calm >= 8) {
+            tipOut = false
+        }
+        return tipOut
+    }
+
+    private fun resetTip() {
+        tipOut = false
+        lastTemp = Float.NaN
+        calm = 0
+        chart.notice = null
+    }
+
     override fun onLive(s: Sample) {
         // duty 512 = heater on all the time
         val power = (s.duty * 100f / 512f).coerceIn(0f, 100f)
-        toolsPage.onSample(s, power)
-        pidTools.onSample(s)
-        if (dashboard.visibility == View.VISIBLE) dashboard.update(s, power)
+        val noTip = tipAbsent(s.temp)
+        chart.notice = if (noTip) "No tip" else null
+        if (!noTip) {
+            toolsPage.onSample(s, power)
+            pidTools.onSample(s)
+        }
+        if (dashboard.visibility == View.VISIBLE) { if (noTip) dashboard.showNoTip(s) else dashboard.update(s, power) }
         if (paused) return
         if (refAdc.isNaN()) {
             refAdc = s.adc
@@ -644,15 +677,16 @@ class MainActivity : Activity(), DeviceLink.Listener {
         refWs += (s.ws0 - refWs) * 0.01f
         chart.add(
             floatArrayOf(
-                s.set, s.temp, power * 5f, s.pidInput, s.avg,
-                250f + (s.adc - refAdc) * 8f,         // 8 units = 1 ADC count (the trace is the ADC value divided by 2)
-                s.resistance,                         // heater resistance in ohm, drawn on the right axis
-                250f + (s.ws0 - refWs),
+                s.set, if (noTip) Float.NaN else s.temp, power * 5f, if (noTip) Float.NaN else s.pidInput, if (noTip) Float.NaN else s.avg,
+                if (noTip) Float.NaN else 250f + (s.adc - refAdc) * 8f,   // 8 units = 1 ADC count (the trace is the ADC value divided by 2)
+                if (noTip) Float.NaN else s.resistance,                   // heater resistance in ohm, drawn on the right axis
+                if (noTip) Float.NaN else 250f + (s.ws0 - refWs),
                 s.power                                // heater drive flag seen in this sample: 0 or 100
             )
         )
         if (++sampleCount % 5 == 0) {
-            readout.text = String.format(Locale.US, "Set %.0f\u00B0C    Actual %.0f\u00B0C", s.set, s.temp)
+            readout.text = if (noTip) String.format(Locale.US, "Set %.0f\u00B0C    No tip", s.set)
+                           else String.format(Locale.US, "Set %.0f\u00B0C    Actual %.0f\u00B0C", s.set, s.temp)
             powerBar.progress = Math.round(power)
             powerText.text = String.format(Locale.US, "%.0f%%", power)
         }
@@ -669,6 +703,7 @@ class MainActivity : Activity(), DeviceLink.Listener {
     }
 
     override fun onInstrumentChange(id: Int) {
+        lastTemp = Float.NaN        // a new tip or iron: the first reading is not a jump
         toolsPage.ironId = id
         pidTools.ironId = id
         pidTools.forgetOriginal()
