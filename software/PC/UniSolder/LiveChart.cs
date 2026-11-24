@@ -115,9 +115,13 @@ namespace UniSolder
 
         private readonly Queue<float[]> queue = new Queue<float[]>();
         private readonly Queue<double> arrivals = new Queue<double>();
-        private double arrivalRate, lastArrival, lastRelease;
+        private double arrivalRate, lastArrival, nextTs;
 
-        /// <summary>Moves queued samples into the chart at the steady pace (UI thread).</summary>
+        /// <summary>
+        /// Moves queued samples into the chart on a steady schedule (UI thread). Each sample gets a scheduled time one step after the
+        /// previous one, not the time of the frame that happens to release it, so a sample rate that does not match the screen refresh
+        /// (50 samples/s on a 60 Hz screen) does not make the scrolling uneven.
+        /// </summary>
         private void Pump()
         {
             double now = clock.Elapsed.TotalSeconds;
@@ -127,12 +131,12 @@ namespace UniSolder
                 while (queue.Count > 0)
                 {
                     double s = queue.Count > 4 ? step * 0.5 : step;       // catch up when many wait
-                    if (lastAdd > 0 && now - lastRelease < s) break;
-                    var values = queue.Dequeue();
-                    Commit(values);
+                    if (lastAdd > 0 && now < nextTs) break;
+                    if (now - nextTs > 2 * step) nextTs = now;            // after a pause: start again from now
+                    Commit(queue.Dequeue());
                     interval = step;
-                    lastAdd = now;
-                    lastRelease = (lastRelease > 0 && now - lastRelease < 2 * s) ? lastRelease + s : now;
+                    lastAdd = nextTs;
+                    nextTs += s;
                 }
             }
         }
@@ -342,10 +346,10 @@ namespace UniSolder
                 }
 
                 g.SetClip(new RectangleF(left, top, w2, h));
-                // slide: just after a sample arrives the trace is one step to the left, one step later it has reached its place
+                // slide: a new sample shifts the whole trace one step to the left at once; this puts it back and lets it glide left over one step
                 double since = clock.Elapsed.TotalSeconds - lastAdd;
                 float frac = lastAdd <= 0 ? 1f : (float)Math.Max(0.0, Math.Min(1.0, since / interval));
-                float slide = -(1f - frac) * w2 / (Capacity - 1f);
+                float slide = (1f - frac) * w2 / (Capacity - 1f);
                 var run = new List<PointF>();
                 foreach (var s in Items)
                 {
