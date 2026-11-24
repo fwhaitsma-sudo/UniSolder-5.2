@@ -126,21 +126,11 @@ namespace UniSolder
                 paused = !paused;
                 pauseButton.Text = paused ? "Resume" : "Pause";
             };
-            var zoomButton = new ThemedButton();
-            int[] zoomSteps = { 500, 250, 120 };
-            int zoomAt = 0;
-            Theme.Style(zoomButton, "Zoom: 1x", 150);
-            zoomButton.Click += (s, e) =>
-            {
-                zoomAt = (zoomAt + 1) % zoomSteps.Length;
-                liveChart.WindowSamples = zoomSteps[zoomAt];
-                zoomButton.Text = "Zoom: " + (500 / zoomSteps[zoomAt]) + "x";
-            };
             var recButton = new ThemedButton { Strong = true };
             Theme.Style(recButton, "Record", 150);
             var dashButton = new ThemedButton();
             Theme.Style(dashButton, "Dashboard", 150);
-            var liveButtons = Theme.Row(pauseButton, zoomButton, recButton, dashButton);
+            var liveButtons = Theme.Row(pauseButton, recButton, dashButton);
             liveButtons.Margin = new Padding(0, 8, 0, 0);
 
             var liveLayout = new TableLayoutPanel();

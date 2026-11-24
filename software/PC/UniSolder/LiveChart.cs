@@ -85,16 +85,6 @@ namespace UniSolder
         private Series Ohm { get { return Items.Find(s => s.RightAxis); } }
 
         /// <summary>Adds one sample: values in the order of <see cref="Items"/>.</summary>
-        /// <summary>Number of samples across the chart width (at most <see cref="Capacity"/>); fewer = zoomed in, the trace moves faster.</summary>
-        [System.ComponentModel.Browsable(false)]
-        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
-        public int WindowSamples
-        {
-            get { return window; }
-            set { window = Math.Max(30, Math.Min(Capacity, value)); Invalidate(); }
-        }
-        private int window = Capacity;
-
         public void Add(float[] values)
         {
             for (int i = 0; i < Items.Count; i++) Items[i].Data[head] = values[i];
@@ -251,10 +241,10 @@ namespace UniSolder
                     run.Clear();
                     using (var pen = new Pen(s.Color, 2f * k) { LineJoin = LineJoin.Round, StartCap = LineCap.Round, EndCap = LineCap.Round })
                     {
-                        for (int i = Math.Max(0, count - window); i < count; i++)
+                        for (int i = 0; i < count; i++)
                         {
                             float raw = s.Data[(oldest + i) % Capacity];
-                            float px = left + (window - count + i) / (window - 1f) * w2;
+                            float px = left + (Capacity - count + i) / (Capacity - 1f) * w2;
                             float py;
                             bool ok = !float.IsNaN(raw);          // no valid reading (tip removed): gap in the trace
                             if (ok && s.RightAxis)
