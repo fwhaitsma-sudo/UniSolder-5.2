@@ -62,6 +62,7 @@ namespace UniSolder
         private ControlTab controlTab;
         private ToolsTab toolsTab;
         private SettingsTab settingsTab;
+        private RampTab rampTab;
         private PidTools pidTools;
         private bool wasConnected;
 
@@ -214,7 +215,10 @@ namespace UniSolder
             settingsTab = new SettingsTab(lUniSolder);
             settingsTab.Back += () => ShowPage(1);
             controlTab.OpenSettings += () => ShowPage(6);
-            pages = new Control[] { live, controlTab, pid, toolsTab, firmware, moreTab, settingsTab };
+            rampTab = new RampTab(lUniSolder);
+            rampTab.Back += () => ShowPage(1);
+            controlTab.OpenRamp += () => ShowPage(7);
+            pages = new Control[] { live, controlTab, pid, toolsTab, firmware, moreTab, settingsTab, rampTab };
             var host = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Bg };
             foreach (var p in pages)
             {
@@ -322,7 +326,7 @@ namespace UniSolder
                 liveBarText.Text = "\u2014";
                 liveChart.Notice = null;
             }
-            if (wasConnected && !connected) { toolsTab?.OnDisconnected(); settingsTab?.OnDisconnected(); pidTools?.OnDisconnected(); }
+            if (wasConnected && !connected) { toolsTab?.OnDisconnected(); settingsTab?.OnDisconnected(); pidTools?.OnDisconnected(); rampTab?.OnDisconnected(); }
             wasConnected = connected;
         }
 

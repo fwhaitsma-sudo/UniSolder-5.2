@@ -136,7 +136,7 @@ namespace UniSolder
 
         public string Value { get { return box.Text; } }
 
-        public PromptForm(string title, string hint)
+        public PromptForm(string title, string hint, string initial = "", int maxLength = 0)
         {
             Text = title;
             FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -156,6 +156,8 @@ namespace UniSolder
             box.ForeColor = Theme.Text;
             box.BorderStyle = BorderStyle.FixedSingle;
             box.Font = Theme.MakeFont(11f);
+            box.Text = initial ?? "";
+            if (maxLength > 0) box.MaxLength = maxLength;
             var ok = new ThemedButton { Strong = true, Text = "Save", Size = new Size(110, 40), Location = new Point(176, 92), DialogResult = DialogResult.OK };
             var cancel = new ThemedButton { Text = "Cancel", Size = new Size(110, 40), Location = new Point(294, 92), DialogResult = DialogResult.Cancel };
             Controls.Add(label);

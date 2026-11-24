@@ -31,6 +31,7 @@ namespace UniSolder
 
         /// <summary>The user wants the station settings page.</summary>
         public event Action OpenSettings;
+        public event Action OpenRamp;
 
         private UniSolderComm.AppInfo info;
         private UniSolderComm.DeviceState state;
@@ -119,7 +120,10 @@ namespace UniSolder
             var settingsButton = new ThemedButton();
             Theme.Style(settingsButton, "Station settings", 190);
             settingsButton.Click += (s, e) => OpenSettings?.Invoke();
-            col.Controls.Add(Theme.Row(sleepButton, ironButton, settingsButton));
+            var rampButton = new ThemedButton();
+            Theme.Style(rampButton, "Ramp mode", 150);
+            rampButton.Click += (s, e) => OpenRamp?.Invoke();
+            col.Controls.Add(Theme.Row(sleepButton, ironButton, settingsButton, rampButton));
 
             // settings
             col.Controls.Add(Theme.Heading("Settings backup"));
