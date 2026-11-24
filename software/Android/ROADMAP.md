@@ -88,3 +88,4 @@ Update this file and commit after each finished item, so a new session can conti
 - 2026-11-24: user: the profile last-step hold / WAIT time-out app issue is regarded as solved (nothing to do). Foot pedal idea cancelled.
 - 2026-11-24: user: the 170 C lock-up report is regarded as solved (not an issue anymore as far as the user can tell).
 - 2026-11-24: user: ramp mode hardware test item closed (lift start and profile work; the optional thermocouple measurement of the tip to joint difference is dropped).
+- 2026-11-24: user: first PID answer over Bluetooth item closed (works in use; the retry every 2 s stays, root cause of a possible missed first answer never found).
