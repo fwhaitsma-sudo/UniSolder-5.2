@@ -26,6 +26,8 @@ namespace UniSolder
 
         private System.Windows.Forms.Timer ConnectionTimer;
         private int pidTries;
+        private int livePending;
+        private readonly System.Diagnostics.Stopwatch redrawWatch = System.Diagnostics.Stopwatch.StartNew();
         private DateTime pidNext = DateTime.MinValue;
 
         public Form1()
@@ -469,10 +471,19 @@ namespace UniSolder
         {
             if (SsChart2.InvokeRequired)
             {
-                SsChart2.BeginInvoke(new LiveDataReceivedDelegate(LiveDataReceived), sender, e);
+                //the UI thread must never fall behind the data: posted messages are served before mouse and paint messages, so a queue
+                //that grows freezes the whole window. More than 4 waiting samples: drop this one.
+                if (System.Threading.Interlocked.Increment(ref livePending) > 4)
+                {
+                    System.Threading.Interlocked.Decrement(ref livePending);
+                    return;
+                }
+                try { SsChart2.BeginInvoke(new LiveDataReceivedDelegate(LiveDataReceived), sender, e); }
+                catch (InvalidOperationException) { System.Threading.Interlocked.Decrement(ref livePending); }      //window closed
             }
             else
             {
+                if (livePending > 0) System.Threading.Interlocked.Decrement(ref livePending);
                 var b = e.Data;
                 if (b[0] == 3 && toolsTab != null)
                 {
@@ -531,8 +542,10 @@ namespace UniSolder
                         }
                         break;
                 }
-                if (!SsChart2.redrawactive)
+                //the chart takes its points from every sample but is drawn at most about 10 times a second
+                if (!SsChart2.redrawactive && redrawWatch.ElapsedMilliseconds >= 90)
                 {
+                    redrawWatch.Restart();
                     SsChart2.Drawings(2).Visible = checkBox1.Checked; //CTTemp
                     SsChart2.Drawings(3).Visible = checkBox2.Checked; //CTemp
                     SsChart2.Drawings(4).Visible = checkBox3.Checked; //ADCTemp
