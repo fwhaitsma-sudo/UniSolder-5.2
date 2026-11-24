@@ -42,7 +42,7 @@ namespace UniSolder
             InitializeComponent();
             Theme.ApplyIcon(this);
             SSComm.Log.MessageLogged += Log_MessageLogged;
-            logStatusLabel.Text = "Log: " + SSComm.Log.FilePath;
+            logStatusLabel.Text = "";       // the status bar shows the connection only; messages go to the log file
 
             lUniSolder = new UniSolderComm();
             lUniSolder.InstrumentChange += InstrumentChange;
@@ -380,9 +380,7 @@ namespace UniSolder
                 catch (InvalidOperationException) { } //form closing
                 return;
             }
-            var firstLine = msg.Split(new[] { '\r', '\n' }, 2)[0];
-            logStatusLabel.Text = DateTime.Now.ToString("HH:mm:ss") + "  " + (level == "INFO" ? "" : level + ": ") + firstLine;
-            logStatusLabel.ToolTipText = level + ": " + msg + "\n\nDouble-click to open the log file";
+            // log messages are no longer shown in the status bar (they stay in the log file; double-click the connection text to open it)
         }
 
         private void StatusBar_DoubleClick(object sender, EventArgs e)
@@ -603,7 +601,7 @@ namespace UniSolder
             {
                 liveReadout.Text = noTip
                     ? string.Format(CultureInfo.InvariantCulture, "Set {0:0}\u00B0C    No tip", sample.Set)
-                    : string.Format(CultureInfo.InvariantCulture, "Set {0:0}\u00B0C    Actual {1:0}\u00B0C    ({2:0.0} samples/s)", sample.Set, sample.Temp, liveChart.SampleRate);
+                    : string.Format(CultureInfo.InvariantCulture, "Set {0:0}\u00B0C    Actual {1:0}\u00B0C", sample.Set, sample.Temp);
                 liveBar.Value = (int)Math.Round(power);
                 liveBarText.Text = string.Format(CultureInfo.InvariantCulture, "{0:0}%", power);
             }
