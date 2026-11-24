@@ -86,3 +86,4 @@ Update this file and commit after each finished item, so a new session can conti
 - 2026-11-12: chart legend now Set, Temp, Power + 'PID input' (TAvgP, off by default, tap to show); removed Heater on / Reached / Filtered / ADC traces (user decision). CSV recording unchanged.
 - 2026-11-12: USER PAUSED firmware development (TIP PRESET and everything else firmware). Do not continue item 16 until the user says so. (2026-11-14: user asked for the Bluetooth link, so item 15 is authorised.) State: 16a (storage + apply) is committed on remote-control but never compiled; 16b-16d not started.
 - 2026-11-24: user: the profile last-step hold / WAIT time-out app issue is regarded as solved (nothing to do). Foot pedal idea cancelled.
+- 2026-11-24: user: the 170 C lock-up report is regarded as solved (not an issue anymore as far as the user can tell).
