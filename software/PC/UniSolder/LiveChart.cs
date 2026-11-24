@@ -90,7 +90,62 @@ namespace UniSolder
             for (int i = 0; i < Items.Count; i++) Items[i].Data[head] = values[i];
             head = (head + 1) % Capacity;
             if (count < Capacity) count++;
-            Invalidate();
+            double now = clock.Elapsed.TotalSeconds;
+            if (lastAdd > 0)
+            {
+                double dt = now - lastAdd;
+                if (dt > 0.02 && dt < 1.0) interval += (dt - interval) * 0.1;      // smoothed time between samples
+            }
+            lastAdd = now;
+            // no Invalidate here: the render loop below redraws once per screen refresh
+        }
+
+        // ---- smooth scrolling: samples arrive about 10 times a second, the screen refreshes 60 times or more.
+        // A render thread waits for the screen refresh (DwmFlush) and asks for one redraw per refresh while samples are coming; the trace slides
+        // by a fraction of a sample step between two samples (one sample of delay) instead of jumping a full step per sample.
+        private static readonly System.Diagnostics.Stopwatch clock = System.Diagnostics.Stopwatch.StartNew();
+        private volatile bool running;
+        private volatile bool drawPending;
+        private double lastAdd, interval = 0.1;
+
+        [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
+        private static extern int DwmFlush();
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            running = true;
+            var t = new System.Threading.Thread(RenderLoop) { IsBackground = true, Name = "LiveChart refresh" };
+            t.Start();
+        }
+
+        protected override void OnHandleDestroyed(EventArgs e)
+        {
+            running = false;
+            base.OnHandleDestroyed(e);
+        }
+
+        private void RenderLoop()
+        {
+            bool sync = true;
+            while (running)
+            {
+                try
+                {
+                    if (!sync || DwmFlush() != 0)
+                    {
+                        sync = false;
+                        System.Threading.Thread.Sleep(16);       // no desktop composition: about 60 per second
+                    }
+                }
+                catch (Exception) { sync = false; System.Threading.Thread.Sleep(16); }
+                if (!running || drawPending) continue;
+                double idle = clock.Elapsed.TotalSeconds - lastAdd;
+                if (lastAdd <= 0 || idle > interval * 1.5 + 0.1) continue;      // no samples coming (paused, disconnected): nothing moves
+                drawPending = true;
+                try { BeginInvoke(new Action(() => { Invalidate(); })); }
+                catch (Exception) { drawPending = false; }
+            }
         }
 
         public void Clear()
@@ -158,6 +213,7 @@ namespace UniSolder
 
         protected override void OnPaint(PaintEventArgs e)
         {
+            drawPending = false;
             var g = e.Graphics;
             g.Clear(BackColor);
             g.SmoothingMode = SmoothingMode.AntiAlias;
@@ -234,6 +290,10 @@ namespace UniSolder
                 }
 
                 g.SetClip(new RectangleF(left, top, w2, h));
+                // slide: just after a sample arrives the trace is one step to the left, one step later it has reached its place
+                double since = clock.Elapsed.TotalSeconds - lastAdd;
+                float frac = lastAdd <= 0 ? 1f : (float)Math.Max(0.0, Math.Min(1.0, since / interval));
+                float slide = -(1f - frac) * w2 / (Capacity - 1f);
                 var run = new List<PointF>();
                 foreach (var s in Items)
                 {
@@ -244,7 +304,7 @@ namespace UniSolder
                         for (int i = 0; i < count; i++)
                         {
                             float raw = s.Data[(oldest + i) % Capacity];
-                            float px = left + (Capacity - count + i) / (Capacity - 1f) * w2;
+                            float px = left + slide + (Capacity - count + i) / (Capacity - 1f) * w2;
                             float py;
                             bool ok = !float.IsNaN(raw);          // no valid reading (tip removed): gap in the trace
                             if (ok && s.RightAxis)
