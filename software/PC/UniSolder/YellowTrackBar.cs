@@ -68,9 +68,9 @@ namespace UniSolder
             if (!horizontal)
                 chan = new Rectangle(chan.Top, chan.Left, chan.Height, chan.Width);    //the channel rectangle comes back rotated for a vertical bar
 
-            Color fill = Enabled ? Yellow : Color.FromArgb(200, 190, 150);
-            Color track = Color.FromArgb(200, 200, 205);
-            Color thumbColor = Enabled ? Yellow : Color.FromArgb(200, 190, 150);
+            Color fill = Enabled ? Yellow : Color.FromArgb(104, 88, 30);
+            Color track = Color.FromArgb(72, 72, 82);
+            Color thumbColor = Enabled ? Yellow : Color.FromArgb(104, 88, 30);
             int span = Math.Max(1, Maximum - Minimum);
             double frac = (Value - Minimum) / (double)span;
 
@@ -84,7 +84,7 @@ namespace UniSolder
                 DrawTicks(g, chan.Left, chan.Right, true, cy + 12);
                 var knob = new Rectangle(x - 8, cy - 8, 16, 16);
                 using (var b = new SolidBrush(thumbColor)) g.FillEllipse(b, knob);
-                if (Focused) using (var p = new Pen(Color.FromArgb(120, 90, 0), 1.5f)) g.DrawEllipse(p, knob);
+                if (Focused) using (var p = new Pen(Color.White, 1.5f)) g.DrawEllipse(p, knob);
             }
             else
             {
@@ -95,7 +95,7 @@ namespace UniSolder
                 using (var b = new SolidBrush(fill)) g.FillRectangle(b, new Rectangle(cx - 2, y, 4, Math.Max(0, chan.Bottom - y)));
                 var knob = new Rectangle(cx - 8, y - 8, 16, 16);
                 using (var b = new SolidBrush(thumbColor)) g.FillEllipse(b, knob);
-                if (Focused) using (var p = new Pen(Color.FromArgb(120, 90, 0), 1.5f)) g.DrawEllipse(p, knob);
+                if (Focused) using (var p = new Pen(Color.White, 1.5f)) g.DrawEllipse(p, knob);
             }
         }
 
@@ -104,7 +104,7 @@ namespace UniSolder
             if (TickStyle == TickStyle.None || TickFrequency <= 0) return;
             int span = Maximum - Minimum;
             if (span <= 0 || span / TickFrequency > 100) return;
-            using (var p = new Pen(Color.FromArgb(150, 150, 155)))
+            using (var p = new Pen(Color.FromArgb(110, 110, 120)))
             {
                 for (int v = Minimum; v <= Maximum; v += TickFrequency)
                 {

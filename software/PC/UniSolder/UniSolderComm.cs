@@ -36,9 +36,25 @@ public class UniSolderComm
         REMOTE_PID_SAVE = 0x15,
         REMOTE_PID_CLEAR = 0x16,
         REMOTE_PID_SAVED = 0x17,
+        PID_SLOT_READ = 0x44,
+        PID_SLOT_WRITE = 0x45,
         REMOTE_READ_SETTINGS = 0x20,
         REMOTE_WRITE_SETTINGS = 0x21,
         REMOTE_RESTART = 0x22,
+        REMOTE_GET_PARAMS = 0x40,
+        REMOTE_SET_PARAM = 0x41,
+        REMOTE_GET_NAME = 0x42,
+        REMOTE_SET_NAME = 0x43,
+        RAMP_GET = 0x50,
+        RAMP_SET = 0x51,
+        RAMP_CONTROL = 0x52,
+        RAMP_STATUS = 0x53,
+        RAMP_STEPS_GET = 0x56,
+        RAMP_STEPS_SET = 0x57,
+        RAMP_SLOT_READ = 0x58,
+        RAMP_SLOT_WRITE = 0x59,
+        RAMP_SLOT_DELETE = 0x5A,
+        RAMP_SLOT_LOAD = 0x5B,
 
         BL_GET_INFO = 0xE0,
         BL_ERASE_FLASH = 0xE1,
@@ -132,7 +148,39 @@ public class UniSolderComm
         public bool InMenu { get { return (Mode >= 3 && Mode <= 7) || (Mode >= 9 && Mode <= 12); } }
     }
 
+    /// <summary>Ramp mode status (firmware protocol 7): State 0 off, 1 idle, 2 ramp, 3 hold, 4 and 5 lockout.</summary>
+    public class RampStatus
+    {
+        public int State, MsLeft, Target, Highest, Actual, Step, Lift, LiftMs;
+        public bool Ready;
+    }
+
+    /// <summary>Active profile steps (protocol 9/10): Count steps, 6 x (temperature C, rate 0.1 C/s, hold 0.1 s), Slot = stored profile they came from (-1 none).</summary>
+    public class RampSteps
+    {
+        public int Count;
+        public int[] Steps = new int[RAMP_STEPS * 3];
+        public int Slot = -1;
+    }
+
+    /// <summary>A stored profile in the station (protocol 10); Count 0 = empty slot.</summary>
+    public class RampSlot
+    {
+        public int Slot, Count;
+        public string Name = "";
+        public int[] Steps = new int[RAMP_STEPS * 3];
+    }
+
     #endregion
+
+    public const int PID_SLOTS = 8;
+    public const int PID_SLOT_LEN = 12;
+    public const int RAMP_PARS = 9;
+    public const int RAMP_PARS8 = 13;
+    public const int RAMP_PARS9 = 16;
+    public const int RAMP_STEPS = 6;
+    public const int RAMP_SLOTS = 10;
+    public const int RAMP_NAME_LEN = 10;
 
     private SSComm.IUniComm lTransport;
     public SSComm.IUniComm Transport
@@ -164,6 +212,8 @@ public class UniSolderComm
 
     public event EventHandler<LiveDataReceivedEventData> LiveDataReceived;
     public event EventHandler InstrumentChange;
+    /// <summary>Iron ID from the last instrument change packet (0 = none yet).</summary>
+    public int IronId { get; private set; }
 
 
     private Stopwatch TOTimer = new Stopwatch();
@@ -361,6 +411,175 @@ public class UniSolderComm
         return s;
     }
 
+    /// <summary>All 29 station settings in menu units (protocol 3), or null when the station did not answer.</summary>
+    public int[] GetParams()
+    {
+        var r = Request(new byte[] { (byte)Commands.REMOTE_GET_PARAMS }, 1000);
+        if (r == null) return null;
+        var v = new int[29];
+        for (int i = 0; i < v.Length; i++) v[i] = U16(r, i * 2);
+        return v;
+    }
+
+    /// <summary>Sets one setting. Returns { status, value now in the station } (status 0 done, 1 not settable, 2 out of range, 3 station is in its menu), or null.</summary>
+    public int[] SetParam(int id, int value)
+    {
+        var r = Request(new byte[] { (byte)Commands.REMOTE_SET_PARAM, (byte)id, (byte)(value & 255), (byte)((value >> 8) & 255) }, 1500);
+        if (r == null) return null;
+        SSComm.Log.Info("Setting " + id + " = " + value + " -> status " + r[1] + ", now " + U16(r, 2));
+        return new[] { (int)r[1], U16(r, 2) };
+    }
+
+    /// <summary>The power-up name (up to 10 characters), null when the firmware has no name command (protocol 4).</summary>
+    public string GetName()
+    {
+        var r = Request(new byte[] { (byte)Commands.REMOTE_GET_NAME }, 1000);
+        if (r == null) return null;
+        var sb = new System.Text.StringBuilder();
+        for (int i = 0; i < 10; i++) sb.Append((char)r[i]);
+        return sb.ToString().TrimEnd();
+    }
+
+    /// <summary>0 done, 2 character not allowed, 3 station is in its menu, -1 no answer.</summary>
+    public int SetName(string name)
+    {
+        var b = new byte[11];
+        b[0] = (byte)Commands.REMOTE_SET_NAME;
+        string padded = (name ?? "").PadRight(10, ' ').Substring(0, 10);
+        for (int i = 0; i < 10; i++) b[i + 1] = (byte)padded[i];
+        var r = Request(b, 1500);
+        return r == null ? -1 : r[0];
+    }
+
+    // ---- ramp mode (firmware protocol 7 to 10) ----
+
+    /// <summary>The ramp parameters (n = 9, 13 or 16 values depending on the protocol), or null.</summary>
+    public int[] GetRampPars(int n)
+    {
+        var r = Request(new byte[] { (byte)Commands.RAMP_GET }, 1000);
+        if (r == null || r[0] != 0) return null;
+        var v = new int[n];
+        for (int i = 0; i < n; i++) v[i] = U16(r, 1 + i * 2);
+        return v;
+    }
+
+    /// <summary>0 done, 1 bad key, 2 out of range, 3 a ramp is running, -1 no answer.</summary>
+    public int SetRampPars(int[] v)
+    {
+        var b = new byte[3 + v.Length * 2];
+        b[0] = (byte)Commands.RAMP_SET;
+        b[1] = 0x5A;
+        b[2] = 0xA5;
+        for (int i = 0; i < v.Length; i++)
+        {
+            b[3 + i * 2] = (byte)(v[i] & 255);
+            b[4 + i * 2] = (byte)((v[i] >> 8) & 255);
+        }
+        var r = Request(b, 3000);
+        return r == null ? -1 : r[0];
+    }
+
+    /// <summary>cmd 0 leave, 1 enter, 2 trigger, 3 abort. Returns { status (0 done, 1 not possible, 3 station in menu), state } or null.</summary>
+    public int[] RampControl(int cmd)
+    {
+        var r = Request(new byte[] { (byte)Commands.RAMP_CONTROL, (byte)cmd }, 1500);
+        if (r == null) return null;
+        SSComm.Log.Info("Ramp control " + cmd + " -> status " + r[0] + ", state " + r[1]);
+        return new[] { (int)r[0], (int)r[1] };
+    }
+
+    public RampStatus GetRampStatus()
+    {
+        var r = Request(new byte[] { (byte)Commands.RAMP_STATUS }, 1000);
+        if (r == null) return null;
+        return new RampStatus
+        {
+            State = r[0], Ready = r[1] != 0, MsLeft = U16(r, 2), Target = U16(r, 4), Highest = U16(r, 6), Actual = U16(r, 8),
+            Step = r[22], Lift = r[23], LiftMs = U16(r, 24)
+        };
+    }
+
+    public RampSteps GetRampSteps(bool withSlot)
+    {
+        var r = Request(new byte[] { (byte)Commands.RAMP_STEPS_GET }, 1000);
+        if (r == null || r[0] != 0) return null;
+        var s = new RampSteps { Count = r[1] };
+        for (int i = 0; i < RAMP_STEPS * 3; i++) s.Steps[i] = U16(r, 2 + i * 2);
+        int a = withSlot ? r[38] : 0xFF;
+        s.Slot = a < RAMP_SLOTS ? a : -1;
+        return s;
+    }
+
+    /// <summary>0 done, 1 bad key, 2 out of range, 3 a profile is running, -1 no answer. s = 6 x 3 values.</summary>
+    public int SetRampSteps(int count, int[] s)
+    {
+        var b = new byte[4 + RAMP_STEPS * 6];
+        b[0] = (byte)Commands.RAMP_STEPS_SET;
+        b[1] = 0x5A;
+        b[2] = 0xA5;
+        b[3] = (byte)count;
+        for (int i = 0; i < RAMP_STEPS * 3; i++)
+        {
+            b[4 + i * 2] = (byte)(s[i] & 255);
+            b[5 + i * 2] = (byte)((s[i] >> 8) & 255);
+        }
+        var r = Request(b, 3000);
+        return r == null ? -1 : r[0];
+    }
+
+    /// <summary>A stored profile (protocol 10); null = no answer, Count 0 = empty slot.</summary>
+    public RampSlot RampSlotRead(int slot)
+    {
+        var r = Request(new byte[] { (byte)Commands.RAMP_SLOT_READ, (byte)slot }, 1000);
+        if (r == null || r[0] != slot) return null;
+        var s = new RampSlot { Slot = slot };
+        if (r[1] != 0) return s;
+        var sb = new System.Text.StringBuilder();
+        for (int i = 0; i < RAMP_NAME_LEN; i++)
+        {
+            int c = r[2 + i];
+            if (c == 0) break;
+            sb.Append((char)c);
+        }
+        s.Name = sb.ToString();
+        s.Count = r[12];
+        for (int i = 0; i < RAMP_STEPS * 3; i++) s.Steps[i] = U16(r, 13 + i * 2);
+        return s;
+    }
+
+    /// <summary>0 ok, 1 bad key, 2 bad slot or values, -1 no answer. name: up to 10 printable ASCII characters.</summary>
+    public int RampSlotWrite(int slot, string name, int count, int[] s)
+    {
+        var b = new byte[15 + RAMP_STEPS * 6];
+        b[0] = (byte)Commands.RAMP_SLOT_WRITE;
+        b[1] = 0x5A;
+        b[2] = 0xA5;
+        b[3] = (byte)slot;
+        for (int i = 0; i < RAMP_NAME_LEN; i++) b[4 + i] = i < name.Length ? (byte)name[i] : (byte)0;
+        b[14] = (byte)count;
+        for (int i = 0; i < RAMP_STEPS * 3; i++)
+        {
+            b[15 + i * 2] = (byte)(s[i] & 255);
+            b[16 + i * 2] = (byte)((s[i] >> 8) & 255);
+        }
+        var r = Request(b, 3000);
+        return r == null ? -1 : r[0];
+    }
+
+    /// <summary>0 ok, 1 bad key, 2 bad slot, -1 no answer.</summary>
+    public int RampSlotDelete(int slot)
+    {
+        var r = Request(new byte[] { (byte)Commands.RAMP_SLOT_DELETE, 0x5A, 0xA5, (byte)slot }, 2000);
+        return r == null ? -1 : r[0];
+    }
+
+    /// <summary>Makes a stored profile the active steps: 0 ok, 1 empty, 2 not valid with the station's values, 3 a profile is running, -1 no answer.</summary>
+    public int RampSlotLoad(int slot)
+    {
+        var r = Request(new byte[] { (byte)Commands.RAMP_SLOT_LOAD, (byte)slot }, 3000);
+        return r == null ? -1 : r[0];
+    }
+
     /// <summary>Sets the temperature in degrees C; the station limits it like the knob. Returns the temperature that was set, or -1.</summary>
     public int SetTemperature(int degC)
     {
@@ -413,6 +632,37 @@ public class UniSolderComm
     }
 
     /// <summary>The 64 settings bytes of the station (the pincode is left out by the firmware), or null.</summary>
+    /// <summary>The saved PID values of all irons (protocol 5): 8 slots of 12 bytes, or null.</summary>
+    public List<byte[]> ReadPidSlots()
+    {
+        var l = new List<byte[]>();
+        for (int slot = 0; slot < PID_SLOTS; slot++)
+        {
+            var r = Request(new byte[] { (byte)Commands.PID_SLOT_READ, (byte)slot }, 1500);
+            if (r == null || r[1] != 0) return null;
+            var d = new byte[PID_SLOT_LEN];
+            Array.Copy(r, 2, d, 0, PID_SLOT_LEN);
+            l.Add(d);
+        }
+        return l;
+    }
+
+    public bool WritePidSlots(List<byte[]> slots)
+    {
+        for (int slot = 0; slot < slots.Count; slot++)
+        {
+            var b = new byte[4 + PID_SLOT_LEN];
+            b[0] = (byte)Commands.PID_SLOT_WRITE;
+            b[1] = 0x5A;
+            b[2] = 0xA5;
+            b[3] = (byte)slot;
+            Array.Copy(slots[slot], 0, b, 4, PID_SLOT_LEN);
+            var r = Request(b, 3000);
+            if (r == null || r[0] != 0) return false;
+        }
+        return true;
+    }
+
     public byte[] ReadSettings()
     {
         var outb = new byte[SETTINGS_SIZE];
@@ -665,6 +915,7 @@ public class UniSolderComm
         {
             case 1:
                 SSComm.Log.Info("RX instrument change, iron ID=0x" + (RXB[1] | (RXB[2] << 8)).ToString("X4"));
+                IronId = RXB[1] | (RXB[2] << 8);
                 InstrumentChange?.Invoke(this, new EventArgs());
                 break;
             case 3:

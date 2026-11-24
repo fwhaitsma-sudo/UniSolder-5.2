@@ -40,7 +40,6 @@ class RampPage(private val act: Activity, private val link: DeviceLink, private 
     private val fields = ArrayList<EditText>()
     private val fieldPar = ArrayList<Int>()     // index in the station's parameter list for each field
     private var pars = IntArray(DeviceLink.RAMP_PARS)          // as read from the station (9 values, 13 with protocol 8)
-    private val legacyBox = LinearLayout(act)           // single ramp values (protocol 7 and 8)
     private val profileBox = LinearLayout(act)          // start mode, delay, maximum rate and steps (protocol 9)
     private val stepFields = ArrayList<EditText>()      // 6 x (temperature, rate, hold)
     private val stepCount = EditText(act)
@@ -154,11 +153,6 @@ class RampPage(private val act: Activity, private val link: DeviceLink, private 
         col.addView(head)
 
         addField(col, "Idle temperature (°C)", 0, "100-340, default 165 (below the melting point of Sn62 solder, 179). Held until the profile starts, also while the iron is in its stand.")
-        legacyBox.orientation = LinearLayout.VERTICAL
-        addField(legacyBox, "Peak temperature (°C)", 1, "At least 10 above idle, 350 at most.")
-        addField(legacyBox, "Ramp rate (°C per second)", 2, "5-100. The tip cannot always follow a high rate: check the highest temperature below.")
-        addField(legacyBox, "Dwell at the peak (seconds)", 3, "0-10, one decimal.", decimal = true)
-        col.addView(legacyBox)
         addField(col, "Lockout after the profile (seconds)", 4, "0-60, default 5, counted from the end of the profile. No new profile can start in this time.")
         addField(col, "Ready up to (°C)", 8, "Default 200. At least 10 above idle and at most 10 below the highest step. A profile can start when the tip is not hotter than this (the station shows WAIT until then), and then starts from the tip's temperature.")
         addField(col, "Time-out when idle (minutes)", 5, "1-60. After this time without use the station leaves ramp mode.")
@@ -278,7 +272,6 @@ class RampPage(private val act: Activity, private val link: DeviceLink, private 
         saveButton.isEnabled = ok
         for (f in fields) f.isEnabled = ok
         val p9 = link.connected && protocol() >= 9
-        legacyBox.visibility = if (p9) View.GONE else View.VISIBLE
         profileBox.visibility = if (p9) View.VISIBLE else View.GONE
         stepCount.isEnabled = p9
         slotsBox.visibility = if (link.connected && protocol() >= 10) View.VISIBLE else View.GONE

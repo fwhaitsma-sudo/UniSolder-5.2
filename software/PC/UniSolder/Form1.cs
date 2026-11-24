@@ -1,4 +1,5 @@
-﻿
+﻿using System.Globalization;
+
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -17,21 +18,38 @@ namespace UniSolder
         int CPoint = 0;
 
         private UniSolderComm lUniSolder = null;
+        private SSComm.USBHID usb;
+        private SSComm.BtSerial bt;
+        private DateTime btNext = DateTime.MinValue;     //next Bluetooth attempt (a failed one is repeated every 8 seconds)
+        private bool btBusy;       //a Bluetooth connection attempt is running on a worker thread
+        private MoreTab moreTab;
         private UniSolderComm.PID PID = null;
 
         private System.Windows.Forms.Timer ConnectionTimer;
+        private int pidTries;
+        private int livePending;
+        private LiveChart liveChart;
+        private Label liveReadout, liveBarText;
+        private HeaterBar liveBar;
+        private bool paused, tipOut;
+        private int liveCount, calm;
+        private float refAdc = float.NaN, refWs = float.NaN, lastTemp = float.NaN;
+        private DateTime pidNext = DateTime.MinValue;
 
         public Form1()
         {
             Disposed += Form1_Disposed;
             InitializeComponent();
+            Theme.ApplyIcon(this);
             SSComm.Log.MessageLogged += Log_MessageLogged;
-            logStatusLabel.Text = "Log: " + SSComm.Log.FilePath;
+            logStatusLabel.Text = "";       // the status bar shows the connection only; messages go to the log file
 
             lUniSolder = new UniSolderComm();
             lUniSolder.InstrumentChange += InstrumentChange;
             lUniSolder.LiveDataReceived += LiveDataReceived;
-            lUniSolder.Transport = new SSComm.USBHID { DevVID = 0x4d8, DevPID = 0x3c };
+            usb = new SSComm.USBHID { DevVID = 0x4d8, DevPID = 0x3c };
+            bt = new SSComm.BtSerial();
+            lUniSolder.Transport = usb;
 
             BuildTabs();
 
@@ -39,96 +57,316 @@ namespace UniSolder
             ConnectionTimer.Tick += ConnectionTimer_Tick;
         }
 
-        private TabControl tabs;
+        private PillNav nav;
+        private Control[] pages;
         private ControlTab controlTab;
+        private ToolsTab toolsTab;
+        private SettingsTab settingsTab;
+        private RampTab rampTab;
+        private PidTools pidTools;
+        private bool wasConnected;
 
         /// <summary>
-        /// Same pages as the Android app. The controls made by the designer are moved to their page here:
+        /// Same pages as the Android app, with its look: dark background, yellow headings and rounded buttons, and a page bar at the
+        /// bottom. The controls made by the designer are moved to their page here:
         /// Live = chart and trace tick boxes (+ stop/start), PID = sliders, Firmware = query device and update.
         /// </summary>
         private void BuildTabs()
         {
             SuspendLayout();
-            tabs = new TabControl();
-            tabs.Dock = DockStyle.Fill;
-            tabs.Font = new Font(Font.FontFamily, 11f);
-            tabs.Padding = new Point(20, 6);
-            tabs.SizeMode = TabSizeMode.Fixed;
-            tabs.ItemSize = new Size(120, 36);
+            Font = Theme.MakeFont(10f);
+            BackColor = Theme.Bg;
+            ForeColor = Theme.Text;
+            HandleCreated += (s, e) => Theme.DarkTitle(this);
 
-            var live = new TabPage("Live");
-            var control = new TabPage("Control");
-            var pid = new TabPage("PID");
-            var firmware = new TabPage("Firmware");
-            Font pageFont = new Font(Font.FontFamily, 9f);
-            foreach (var tp in new[] { live, control, pid, firmware }) { tp.Font = pageFont; tp.UseVisualStyleBackColor = true; }
+            //status bar
+            statusStrip1.Renderer = new DarkRenderer();
+            statusStrip1.BackColor = Theme.Card;
+            statusStrip1.ForeColor = Theme.Muted;
+            statusStrip1.Font = Theme.MakeFont(9f);
+            connStatusLabel.ForeColor = Theme.Muted;
+            logStatusLabel.ForeColor = Theme.Muted;
 
-            //pull the sliders and the buttons out of the chart layout
-            buttonsPanel.Controls.Remove(Button8);
-            bottomPanel.Controls.Remove(buttonsPanel);
-            mainLayout.Controls.Remove(bottomPanel);
+            //Live: readout, heater bar, chart and buttons, like the Android app (the old chart and its tick boxes are not used any more)
             Controls.Remove(mainLayout);
+            liveReadout = new Label();
+            liveReadout.AutoSize = true;
+            liveReadout.Font = Theme.MakeFont(20f);
+            liveReadout.ForeColor = Theme.Text;
+            liveReadout.BackColor = Theme.Bg;
+            liveReadout.Text = "No data";
+            liveReadout.Margin = new Padding(4, 0, 0, 4);
 
-            Button8.Margin = new Padding(6, 12, 6, 0);
-            panel1.Controls.Add(Button8);
-            live.Controls.Add(mainLayout);
+            var barRow = new TableLayoutPanel();
+            barRow.ColumnCount = 3;
+            barRow.RowCount = 1;
+            barRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            barRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            barRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 90F));
+            barRow.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            barRow.AutoSize = true;
+            barRow.Dock = DockStyle.Fill;
+            barRow.BackColor = Theme.Bg;
+            barRow.Margin = new Padding(0, 0, 0, 6);
+            var barLabel = new Label { Text = "Heater", AutoSize = true, Font = Theme.MakeFont(12f), ForeColor = Theme.Text, BackColor = Theme.Bg, Anchor = AnchorStyles.Left, Margin = new Padding(4, 0, 10, 0) };
+            liveBar = new HeaterBar { Dock = DockStyle.Fill, Margin = new Padding(0, 4, 10, 4) };
+            liveBarText = new Label { Text = "\u2014", AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleRight, Font = Theme.MakeFont(13f), ForeColor = Theme.Text, BackColor = Theme.Bg, Margin = new Padding(0) };
+            barRow.Controls.Add(barLabel, 0, 0);
+            barRow.Controls.Add(liveBar, 1, 0);
+            barRow.Controls.Add(liveBarText, 2, 0);
 
-            bottomPanel.Dock = DockStyle.Top;
-            bottomPanel.Height = 180;
-            bottomPanel.Padding = new Padding(16);
-            bottomPanel.Margin = new Padding(0);
-            pid.Controls.Add(bottomPanel);
+            liveChart = new LiveChart { Dock = DockStyle.Fill, Margin = new Padding(0) };
 
-            buttonsPanel.Dock = DockStyle.Top;
-            buttonsPanel.Padding = new Padding(16);
-            buttonsPanel.Margin = new Padding(0);
-            firmware.Controls.Add(buttonsPanel);
+            var pauseButton = new ThemedButton();
+            Theme.Style(pauseButton, "Pause", 150);
+            pauseButton.Click += (s, e) =>
+            {
+                paused = !paused;
+                pauseButton.Text = paused ? "Resume" : "Pause";
+            };
+            var recButton = new ThemedButton { Strong = true };
+            Theme.Style(recButton, "Record", 150);
+            var dashButton = new ThemedButton();
+            Theme.Style(dashButton, "Dashboard", 150);
+            var liveButtons = Theme.Row(pauseButton, recButton, dashButton);
+            liveButtons.Margin = new Padding(0, 8, 0, 0);
+
+            var liveLayout = new TableLayoutPanel();
+            liveLayout.Dock = DockStyle.Fill;
+            liveLayout.ColumnCount = 1;
+            liveLayout.RowCount = 4;
+            liveLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            liveLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            liveLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            liveLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            liveLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            liveLayout.Padding = new Padding(16, 8, 16, 8);
+            liveLayout.BackColor = Theme.Bg;
+            liveLayout.Controls.Add(liveReadout, 0, 0);
+            liveLayout.Controls.Add(barRow, 0, 1);
+            liveLayout.Controls.Add(liveChart, 0, 2);
+            liveLayout.Controls.Add(liveButtons, 0, 3);
+            var live = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Bg };
+            live.Controls.Add(liveLayout);
+
+            //PID: one row per slider, label on the left
+            var pid = new Page();
+            pid.Col.Controls.Add(Theme.Heading("PID"));
+            var table = new TableLayoutPanel();
+            table.Tag = "fill";
+            table.ColumnCount = 2;
+            table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 30F));
+            table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 70F));
+            var pidRows = new[]
+            {
+                new KeyValuePair<Label, Control>(GLabel, GTrackBar),
+                new KeyValuePair<Label, Control>(OVFGLabel, OVFGTrackBar),
+                new KeyValuePair<Label, Control>(KpLabel, KpTrackBar),
+                new KeyValuePair<Label, Control>(KiLabel, KiTrackBar),
+                new KeyValuePair<Label, Control>(DGLabel, DGTrackBar)
+            };
+            table.RowCount = pidRows.Length;
+            table.BackColor = Theme.Bg;
+            table.Margin = new Padding(0);
+            table.Height = 64 * pidRows.Length;
+            table.Width = 400;
+            for (int i = 0; i < pidRows.Length; i++)
+            {
+                table.RowStyles.Add(new RowStyle(SizeType.Absolute, 64));
+                var label = pidRows[i].Key;
+                var bar = pidRows[i].Value;
+                label.Parent?.Controls.Remove(label);
+                bar.Parent?.Controls.Remove(bar);
+                label.AutoSize = false;
+                label.Anchor = AnchorStyles.None;
+                label.Dock = DockStyle.Fill;
+                label.Margin = new Padding(0);
+                label.TextAlign = ContentAlignment.MiddleLeft;
+                label.Font = Theme.MakeFont(11f);
+                label.ForeColor = Theme.Text;
+                label.BackColor = Theme.Bg;
+                bar.AutoSize = false;
+                bar.Anchor = AnchorStyles.None;
+                bar.Dock = DockStyle.Fill;
+                bar.Margin = new Padding(8, 0, 8, 0);
+                bar.BackColor = Theme.Bg;
+                table.Controls.Add(label, 0, i);
+                table.Controls.Add(bar, 1, i);
+            }
+            pid.Col.Controls.Add(table);
+            pidTools = new PidTools(pid, lUniSolder, () => PID, ApplyPid, () => InstrumentChange(null, null));
+
+            //Firmware
+            var firmware = new Page();
+            firmware.Col.Controls.Add(Theme.Heading("Firmware"));
+            Theme.Style(Button6, "Query device", 200);
+            Theme.Style(Button3, "Update Firmware", 220);
+            firmware.Col.Controls.Add(Theme.Row(Button6, Button3));
 
             controlTab = new ControlTab(lUniSolder);
-            control.Controls.Add(controlTab);
+            toolsTab = new ToolsTab();
+            recButton.Click += (s, e) => toolsTab.ToggleRecording();
+            dashButton.Click += (s, e) => toolsTab.ShowDashboard();
+            toolsTab.RecordingChanged += on => recButton.Text = on ? "Stop rec." : "Record";
 
-            tabs.TabPages.Add(live);
-            tabs.TabPages.Add(control);
-            tabs.TabPages.Add(pid);
-            tabs.TabPages.Add(firmware);
-            Controls.Add(tabs);
-            Controls.SetChildIndex(tabs, 0);
+            moreTab = new MoreTab();
+            moreTab.BluetoothSaved += ApplyBluetoothSettings;
+            ApplyBluetoothSettings();
+            settingsTab = new SettingsTab(lUniSolder);
+            settingsTab.Back += () => ShowPage(1);
+            controlTab.OpenSettings += () => ShowPage(6);
+            rampTab = new RampTab(lUniSolder);
+            rampTab.Back += () => ShowPage(1);
+            controlTab.OpenRamp += () => ShowPage(7);
+            pages = new Control[] { live, controlTab, pid, toolsTab, firmware, moreTab, settingsTab, rampTab };
+            var host = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Bg };
+            foreach (var p in pages)
+            {
+                p.Dock = DockStyle.Fill;
+                p.Visible = false;
+                host.Controls.Add(p);
+            }
+            nav = new PillNav(new[] { "Live", "Control", "PID", "Tools", "Firmware", "More" });
+            nav.PageSelected += ShowPage;
+            Controls.Add(nav);
+            Controls.Add(host);
+            Controls.SetChildIndex(host, 0);
+            Controls.SetChildIndex(statusStrip1, Controls.Count - 1);
+            ShowPage(0);
+            nav.Select(0);
             ResumeLayout(true);
         }
 
+        private void ShowPage(int index)
+        {
+            for (int i = 0; i < pages.Length; i++) pages[i].Visible = i == index;
+            if (pages[index] == toolsTab) toolsTab.RefreshSessions();
+            if (pages[index] == settingsTab) settingsTab.Reload();
+        }
+
+        /// <summary>Takes the saved Bluetooth settings; a changed PIN or port allows a new attempt after a rejected PIN.</summary>
+        private void ApplyBluetoothSettings()
+        {
+            bool changed = bt.PortName != moreTab.SavedPort || bt.Pin != moreTab.SavedPin;
+            bt.PortName = moreTab.SavedPort;
+            bt.Pin = moreTab.SavedPin;
+            bt.PinRejected = false;
+            if (btBusy) return;
+            if ((!moreTab.UseBluetooth || changed) && lUniSolder.Transport == bt) bt.Disconnect();
+        }
+
+        private bool UseBluetooth => moreTab != null && moreTab.UseBluetooth && !string.IsNullOrEmpty(bt.PortName);
+
         private void ConnectionTimer_Tick(object sender, EventArgs e)
         {
-            if (!lUniSolder.Transport.Connected)
+            if (!btBusy)
             {
-                if (lUniSolder.Transport.Connect())
+                var t = lUniSolder.Transport;
+                if (!t.Connected)
                 {
+                    //USB first; when there is no cable, Bluetooth (on a worker thread: opening the port and the PIN check take seconds)
+                    if (usb.Connect())
+                    {
+                        lUniSolder.Transport = usb;
+                        InstrumentChange(null, null);
+                    }
+                    else if (UseBluetooth && !bt.PinRejected && DateTime.Now >= btNext)
+                    {
+                        btBusy = true;
+                        lUniSolder.Transport = bt;
+                        System.Threading.Tasks.Task.Run(() =>
+                        {
+                            bool ok = false;
+                            try { ok = bt.Connect(); }
+                            catch (Exception ex) { SSComm.Log.Error("Bluetooth connect failed", ex); }
+                            try
+                            {
+                                BeginInvoke(new Action(() =>
+                                {
+                                    btBusy = false;
+                                    if (!ok) btNext = DateTime.Now.AddSeconds(8);
+                                    if (ok) InstrumentChange(null, null);
+                                    UpdateConnectionStatus();
+                                }));
+                            }
+                            catch (InvalidOperationException) { btBusy = false; }      //window closed
+                        });
+                    }
+                }
+                else if (t == bt && usb.Connect())
+                {
+                    //a USB cable always wins
+                    bt.Disconnect();
+                    lUniSolder.Transport = usb;
                     InstrumentChange(null, null);
                 }
             }
             UpdateConnectionStatus();
+            bool connected = lUniSolder.Transport.Connected;
+            //over Bluetooth the first PID query can go unanswered (the link is only just up): ask again a few times, the sliders need it
+            if (connected && !btBusy && lUniSolder.Transport == bt && PID == null)
+            {
+                if (pidTries < 6 && DateTime.Now >= pidNext)
+                {
+                    pidTries++;
+                    pidNext = DateTime.Now.AddSeconds(2);
+                    SSComm.Log.Info("Bluetooth: asking for the PID parameters again (try " + pidTries + ")");
+                    InstrumentChange(null, null);
+                }
+            }
+            else if (!connected || PID != null)
+            {
+                pidTries = 0;
+            }
+            if (connected && !wasConnected) ResetLive();
+            if (!connected && wasConnected)
+            {
+                liveReadout.Text = "No data";
+                liveBar.Value = 0;
+                liveBarText.Text = "\u2014";
+                liveChart.Notice = null;
+            }
+            if (wasConnected && !connected) { toolsTab?.OnDisconnected(); settingsTab?.OnDisconnected(); pidTools?.OnDisconnected(); rampTab?.OnDisconnected(); }
+            wasConnected = connected;
         }
 
         private void Form1_Disposed(object sender, EventArgs e)
         {
             //static event: unsubscribe so the log does not call a disposed form
             SSComm.Log.MessageLogged -= Log_MessageLogged;
-            lUniSolder?.Transport?.Dispose();
+            usb?.Dispose();
+            bt?.Dispose();
         }
 
         private void UpdateConnectionStatus()
         {
-            if (!lUniSolder.Transport.Connected)
+            bool viaBt = lUniSolder.Transport == bt;
+            string how = viaBt ? " (Bluetooth)" : "";
+            if (moreTab != null)
             {
-                connStatusLabel.Text = "Not connected";
+                if (!UseBluetooth) moreTab.SetStatus("Bluetooth is off");
+                else if (viaBt && bt.Connected) moreTab.SetStatus("Connected over Bluetooth");
+                else if (btBusy) moreTab.SetStatus("Connecting over Bluetooth...");
+                else if (bt.PinRejected) moreTab.SetStatus("Bluetooth: wrong PIN (change it and save to try again)");
+                else if (usb.Connected) moreTab.SetStatus("Connected over USB (Bluetooth is not needed)");
+                else moreTab.SetStatus("Bluetooth: " + (string.IsNullOrEmpty(bt.LastError) ? "waiting for the bridge" : bt.LastError));
+            }
+            if (btBusy)
+            {
+                connStatusLabel.Text = "Connecting over Bluetooth...";
+            }
+            else if (!lUniSolder.Transport.Connected)
+            {
+                connStatusLabel.Text = viaBt && !string.IsNullOrEmpty(bt.LastError) ? "Bluetooth: " + bt.LastError : "Not connected";
             }
             else if (PID == null)
             {
                 //connected but the PID query failed: typically the device is in bootloader mode
-                connStatusLabel.Text = "Connected - no answer (bootloader?)";
+                connStatusLabel.Text = "Connected" + how + " - no answer (bootloader?)";
             }
             else
             {
-                connStatusLabel.Text = "Connected";
+                connStatusLabel.Text = "Connected" + how;
             }
         }
 
@@ -142,9 +380,7 @@ namespace UniSolder
                 catch (InvalidOperationException) { } //form closing
                 return;
             }
-            var firstLine = msg.Split(new[] { '\r', '\n' }, 2)[0];
-            logStatusLabel.Text = DateTime.Now.ToString("HH:mm:ss") + "  " + (level == "INFO" ? "" : level + ": ") + firstLine;
-            logStatusLabel.ToolTipText = level + ": " + msg + "\n\nDouble-click to open the log file";
+            // log messages are no longer shown in the status bar (they stay in the log file; double-click the connection text to open it)
         }
 
         private void StatusBar_DoubleClick(object sender, EventArgs e)
@@ -254,6 +490,17 @@ namespace UniSolder
             }
             else
             {
+                lastTemp = float.NaN;       //a new tip or iron: the first reading is not a jump
+                if (pidTools != null)
+                {
+                    pidTools.IronId = lUniSolder.IronId;
+                    pidTools.ForgetOriginal();
+                }
+                if (toolsTab != null)
+                {
+                    toolsTab.IronId = lUniSolder.IronId;
+                    toolsTab.ShowTip();
+                }
                 //PID stays null while the sliders are updated, so ValueChanged does not send anything
                 PID = null;
                 var pid = lUniSolder.Transport.Connected ? lUniSolder.AppGetPIDParameters() : null;
@@ -271,8 +518,29 @@ namespace UniSolder
                 SetTrackBar(OVFGTrackBar, pid.OVSGain);
                 SetTrackBar(GTrackBar, pid.Gain);
                 PID = pid;
+                pidTools?.OnPidLoaded(pid);
                 UpdateConnectionStatus();
             }
+        }
+
+        /// <summary>Sends a set of PID values to the iron (the offset stays) and moves the sliders to them.</summary>
+        private void ApplyPid(UniSolderComm.PID p)
+        {
+            if (PID == null) return;
+            var offset = PID.Offset;
+            PID = null;         //so ValueChanged of the sliders does not send each value on its own
+            SetTrackBar(KpTrackBar, p.KP);
+            SetTrackBar(KiTrackBar, p.KI);
+            SetTrackBar(DGTrackBar, p.DGain);
+            SetTrackBar(OVFGTrackBar, p.OVSGain);
+            SetTrackBar(GTrackBar, p.Gain);
+            var n = new UniSolderComm.PID
+            {
+                Gain = (UInt16)GTrackBar.Value, Offset = offset, KP = (UInt16)KpTrackBar.Value, KI = (UInt16)KiTrackBar.Value,
+                DGain = (byte)DGTrackBar.Value, OVSGain = (byte)OVFGTrackBar.Value
+            };
+            PID = n;
+            lUniSolder.AppSetPIDParameters(ref PID);
         }
 
         private static void SetTrackBar(TrackBar tb, int value)
@@ -283,85 +551,99 @@ namespace UniSolder
         public delegate void LiveDataReceivedDelegate(object sender, UniSolderComm.LiveDataReceivedEventData e);
         private void LiveDataReceived(object sender, UniSolderComm.LiveDataReceivedEventData e)
         {
-            if (SsChart2.InvokeRequired)
+            if (InvokeRequired)
             {
-                SsChart2.BeginInvoke(new LiveDataReceivedDelegate(LiveDataReceived), sender, e);
+                //the UI thread must never fall behind the data: posted messages are served before mouse and paint messages, so a queue
+                //that grows freezes the whole window. More than 4 waiting samples: drop this one.
+                if (System.Threading.Interlocked.Increment(ref livePending) > 4)
+                {
+                    System.Threading.Interlocked.Decrement(ref livePending);
+                    return;
+                }
+                try { BeginInvoke(new LiveDataReceivedDelegate(LiveDataReceived), sender, e); }
+                catch (InvalidOperationException) { System.Threading.Interlocked.Decrement(ref livePending); }      //window closed
+                return;
             }
-            else
+            if (livePending > 0) System.Threading.Interlocked.Decrement(ref livePending);
+            var sample = LiveSample.Parse(e.Data);
+            if (sample == null) return;
+            float power = sample.PowerPct;
+            bool noTip = TipAbsent(sample.Temp);
+            liveChart.Notice = noTip ? "No tip" : null;
+            if (toolsTab != null)
             {
-                var b = e.Data;
-                switch (b[0])
-                {
-                    case 3:
-                        if (Button8.Text != "START")
-                        {
-                            SsChart2.Drawings(0).Points[0].X = SsChart2.Drawings(1).Points[CPoint].X;
-                            SsChart2.Drawings(0).Points[1].X = SsChart2.Drawings(1).Points[CPoint].X;
-
-                            //CTTemp
-                            SsChart2.Drawings(2).Points[CPoint].Y = b[3] * 2.0F;
-
-                            //CTemp
-                            SsChart2.Drawings(3).Points[CPoint].Y = b[4] * 0.5F + b[5] * 128.0F;
-
-                            //ADCTemp
-                            SsChart2.Drawings(4).Points[CPoint].Y = b[6] * 0.5F + b[7] * 128.0F;
-
-                            //TAvgF
-                            SsChart2.Drawings(5).Points[CPoint].Y = b[8] * 0.5F + b[9] * 128.0F;
-
-                            //CHRes - Heater resistance x10
-                            SsChart2.Drawings(8).Points[CPoint].Y = (short)(b[10] | (b[11] << 8));
-
-                            //TAvgP
-                            SsChart2.Drawings(9).Points[CPoint].Y = b[12] * 0.5F + b[13] * 128.0F;
-
-                            //Power On/Off
-                            SsChart2.Drawings(7).Points[CPoint].Y = b[14] != 0 ? 100.0F : 0.0F;
-
-                            //WSDelta
-                            SsChart2.Drawings(10).Points[0].Y = (b[15] * 1.0F + b[16] * 256.0F - 2048.0F) / 4.0F + 200.0F;
-                            SsChart2.Drawings(10).Points[1].Y = (b[17] * 1.0F + b[18] * 256.0F - 2048.0F) / 4.0F + 200.0F;
-                            SsChart2.Drawings(10).Points[2].Y = (b[19] * 1.0F + b[20] * 256.0F - 2048.0F) / 4.0F + 200.0F;
-                            SsChart2.Drawings(10).Points[3].Y = (b[21] * 1.0F + b[22] * 256.0F - 2048.0F) / 4.0F + 200.0F;
-                            SsChart2.Drawings(10).Points[4].Y = (b[23] * 1.0F + b[24] * 256.0F - 2048.0F) / 4.0F + 200.0F;
-                            SsChart2.Drawings(10).Points[5].Y = (b[25] * 1.0F + b[26] * 256.0F - 2048.0F) / 4.0F + 200.0F;
-                            SsChart2.Drawings(10).Points[6].Y = (b[27] * 1.0F + b[28] * 256.0F - 2048.0F) / 4.0F + 200.0F;
-
-                            //DestinationReached
-                            SsChart2.Drawings(11).Points[CPoint].Y = b[31] * 100.0F;
-
-                            //Duty
-                            SsChart2.Drawings(1).Points[CPoint].Y = (b[32] * 1.0F + b[33] * 256.0F) / 128.0F;
-
-                            ////SsChart2.Drawings(12).Points(CPoint).Y = (b(34) * 1.0 + b(35) * 256.0);
-                            //TAvgF
-                            //SsChart2.Drawings(6).Points(CPoint).Y = (b(10) * 1.0 + b(11) * 256.0 - 2048.0) / 4.0 + 200.0
-
-                            CPoint = (CPoint + 1) % 256;
-                        }
-                        break;
-                }
-                if (!SsChart2.redrawactive)
-                {
-                    SsChart2.Drawings(2).Visible = checkBox1.Checked; //CTTemp
-                    SsChart2.Drawings(3).Visible = checkBox2.Checked; //CTemp
-                    SsChart2.Drawings(4).Visible = checkBox3.Checked; //ADCTemp
-                    SsChart2.Drawings(5).Visible = checkBox4.Checked; //TAvgF
-                    SsChart2.Drawings(9).Visible = checkBox6.Checked; //TavgP
-                    SsChart2.Drawings(11).Visible = checkBox7.Checked; //DestinationReached
-                    SsChart2.Drawings(1).Visible = checkBox8.Checked; //Duty
-                    SsChart2.Drawings(8).Visible = checkBox9.Checked; //CHRes
-                    SsChart2.Drawings(7).Visible = checkBox10.Checked; //Power On/Off
-                    SsChart2.Drawings(10).Visible = checkBox11.Checked; //WsDelta
-
-                    SsChart2._Redraw();
-                }
+                if (noTip) toolsTab.OnNoTip(sample);
+                else toolsTab.OnSample(sample);
             }
+            if (!noTip) pidTools?.OnSample(sample);
+            if (paused) return;
+            if (float.IsNaN(refAdc))
+            {
+                refAdc = sample.Adc;
+                refWs = sample.Ws0;
+            }
+            refAdc += (sample.Adc - refAdc) * 0.01f;       //slow reference: the traces show changes around it
+            refWs += (sample.Ws0 - refWs) * 0.01f;
+            float nan = float.NaN;
+            liveChart.Add(new float[]
+            {
+                sample.Set,
+                noTip ? nan : sample.Temp,
+                power * 5f,
+                noTip ? nan : sample.PidInput,
+                noTip ? nan : sample.Avg,
+                noTip ? nan : 250f + (sample.Adc - refAdc) * 8f,      //8 units = 1 ADC count
+                noTip ? nan : sample.Resistance,                      //heater resistance in ohm, drawn on the right axis
+                noTip ? nan : 250f + (sample.Ws0 - refWs),
+                sample.HeaterOn ? 100f : 0f
+            });
+            if (++liveCount % 5 == 0)
+            {
+                liveReadout.Text = noTip
+                    ? string.Format(CultureInfo.InvariantCulture, "Set {0:0}\u00B0C    No tip", sample.Set)
+                    : string.Format(CultureInfo.InvariantCulture, "Set {0:0}\u00B0C    Actual {1:0}\u00B0C", sample.Set, sample.Temp);
+                liveBar.Value = (int)Math.Round(power);
+                liveBarText.Text = string.Format(CultureInfo.InvariantCulture, "{0:0}%", power);
+            }
+        }
+
+        /// <summary>
+        /// Tells whether the tip is out of the iron. The station sends no flag for it, but with the sensor open the temperature
+        /// reading jumps wildly (up to over 500 and down to 0). A jump of more than 40 C between two samples (a real tip cannot change
+        /// that fast), or a reading outside 1..480 C, marks the tip as removed; it counts as back when 8 samples in a row are calm.
+        /// </summary>
+        private bool TipAbsent(float t)
+        {
+            bool bad = t < 1f || t > 480f || (!float.IsNaN(lastTemp) && Math.Abs(t - lastTemp) > 40f);
+            lastTemp = t;
+            if (!tipOut)
+            {
+                if (bad) { tipOut = true; calm = 0; }
+            }
+            else if (bad) calm = 0;
+            else if (++calm >= 8) tipOut = false;
+            return tipOut;
+        }
+
+        /// <summary>A new connection: empty chart, fresh references.</summary>
+        private void ResetLive()
+        {
+            liveChart.Clear();
+            liveChart.Notice = null;
+            refAdc = float.NaN;
+            refWs = float.NaN;
+            tipOut = false;
+            lastTemp = float.NaN;
+            calm = 0;
         }
 
         private void Button3_Click(object sender, EventArgs e)
         {
+            if (lUniSolder.Transport == bt && bt.Connected)
+            {
+                MessageBox.Show("The firmware cannot be updated over Bluetooth. Connect the USB cable and try again.", "UniSolder", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
             var fd = new OpenFileDialog()
             {
                 CheckFileExists = true,

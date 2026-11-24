@@ -24,6 +24,7 @@
   </PropertyGroup>
   <PropertyGroup>
     <StartupObject>UniSolder.Program</StartupObject>
+    <ApplicationIcon>UniSolder.ico</ApplicationIcon>
   </PropertyGroup>
   <PropertyGroup>
     <ApplicationManifest>app.manifest</ApplicationManifest>

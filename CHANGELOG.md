@@ -67,6 +67,13 @@ Only what is in the firmware now is listed. Reverted and superseded changes are 
 - **Tabs like the Android app:** Live, Control, PID and Firmware, with the remote control commands and the Control tab. The temperature and PID sliders are yellow.
 - **.NET 10 build:** the Windows application is migrated to .NET 10 (SDK-style projects, HidSharp instead of the old USB layer), with USB communication fixes. A separate workflow, "Windows Unisolder application (.NET 10)", publishes a single-file exe that runs without installing .NET. (68e7b9f)
 
+- **Look of the Android app:** dark background, yellow headings, rounded buttons and a page bar at the bottom (Live, Control, PID, Tools, Firmware, More). Pages are one scrolling column whose text wraps, no overlapping text at any DPI scaling. The app has the UniSolder icon.
+- **Live page:** scrolling chart of set and actual temperature, power, PID input, filtered, ADC, heater resistance (own axis in ohm) and wave shaping, each trace switchable, with pause, record and the dashboard. A tip change leaves gaps in the traces instead of spikes, and heater resistance readings of 50 ohm and more are ignored. The chart scrolls smoothly at any screen refresh rate and any sample rate (also when Bluetooth delivers the samples in bunches).
+- **Bluetooth:** connects through the COM port of the paired ESP32 bridge (PIN, USB first, a cable always wins), with a keep-alive so the station keeps sending live data. Set up on the More page.
+- **Tools page:** recording to files with a session list, tip health with a baseline per iron, overheat alert and a full screen dashboard.
+- **Station settings page, PID tools and ramp mode page** like the Android app: all station settings, revert and save PID values, saved sets per iron, step response analysis with a step test and the Gain calibration helper, and ramp mode (values, enter and leave, start and abort, live state, profile steps, 10 stored profiles).
+- **Settings backup** includes the saved PID values and the ramp mode values, active profile and stored profiles, in the same file format as the Android app.
+
 ## Android application
 
 - **Station settings page** (Control tab, needs firmware protocol 4 for the name, 3 for the rest): T1-T4, holder and sleep temperature, sleep and stand-by time, wake up, holder sensor, degrees, brightness, sound and pitch, temperature and display step, sensor filter and the power-up name, in grouped cards. Swipe right or Back closes it.
