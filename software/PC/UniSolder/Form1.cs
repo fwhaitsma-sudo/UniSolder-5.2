@@ -29,8 +29,6 @@ namespace UniSolder
         private int pidTries;
         private int livePending;
         private LiveChart liveChart;
-        private readonly System.Diagnostics.Stopwatch liveClock = System.Diagnostics.Stopwatch.StartNew();
-        private double liveLast, liveRate;
         private Label liveReadout, liveBarText;
         private HeaterBar liveBar;
         private bool paused, tipOut;
@@ -601,14 +599,11 @@ namespace UniSolder
                 noTip ? nan : 250f + (sample.Ws0 - refWs),
                 sample.HeaterOn ? 100f : 0f
             });
-            double now = liveClock.Elapsed.TotalSeconds;
-            if (liveLast > 0 && now > liveLast) liveRate += (1.0 / (now - liveLast) - liveRate) * 0.1;
-            liveLast = now;
             if (++liveCount % 5 == 0)
             {
                 liveReadout.Text = noTip
                     ? string.Format(CultureInfo.InvariantCulture, "Set {0:0}\u00B0C    No tip", sample.Set)
-                    : string.Format(CultureInfo.InvariantCulture, "Set {0:0}\u00B0C    Actual {1:0}\u00B0C    ({2:0.0} samples/s)", sample.Set, sample.Temp, liveRate);
+                    : string.Format(CultureInfo.InvariantCulture, "Set {0:0}\u00B0C    Actual {1:0}\u00B0C    ({2:0.0} samples/s)", sample.Set, sample.Temp, liveChart.SampleRate);
                 liveBar.Value = (int)Math.Round(power);
                 liveBarText.Text = string.Format(CultureInfo.InvariantCulture, "{0:0}%", power);
             }

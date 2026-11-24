@@ -85,19 +85,68 @@ namespace UniSolder
         private Series Ohm { get { return Items.Find(s => s.RightAxis); } }
 
         /// <summary>Adds one sample: values in the order of <see cref="Items"/>.</summary>
+        /// <summary>
+        /// Adds one sample: values in the order of <see cref="Items"/>. Samples are not drawn on arrival: over Bluetooth they arrive in bunches,
+        /// and drawing each at its arrival time makes the trace stutter. They wait in a short queue and are released at the average rate.
+        /// </summary>
         public void Add(float[] values)
+        {
+            double now = clock.Elapsed.TotalSeconds;
+            lock (queue)
+            {
+                queue.Enqueue((float[])values.Clone());
+                while (queue.Count > 30) queue.Dequeue();
+                arrivals.Enqueue(now);
+                while (arrivals.Count > 30 || (arrivals.Count > 2 && now - arrivals.Peek() > 3.0)) arrivals.Dequeue();
+                if (arrivals.Count >= 8)
+                {
+                    double span = now - arrivals.Peek();
+                    if (span > 0.2) arrivalRate = (arrivals.Count - 1) / span;
+                }
+                lastArrival = now;
+            }
+            // no Invalidate here: the render loop below redraws once per screen refresh
+        }
+
+        /// <summary>Measured samples per second (average over the last seconds); 0 until known.</summary>
+        [System.ComponentModel.Browsable(false)]
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+        public double SampleRate { get { return arrivalRate; } }
+
+        private readonly Queue<float[]> queue = new Queue<float[]>();
+        private readonly Queue<double> arrivals = new Queue<double>();
+        private double arrivalRate, lastArrival, lastRelease;
+
+        /// <summary>Moves queued samples into the chart at the steady pace (UI thread).</summary>
+        private void Pump()
+        {
+            double now = clock.Elapsed.TotalSeconds;
+            double step = arrivalRate > 1.0 ? Math.Max(0.02, Math.Min(0.5, 1.0 / arrivalRate)) : 0.1;
+            lock (queue)
+            {
+                while (queue.Count > 0)
+                {
+                    double s = queue.Count > 4 ? step * 0.5 : step;       // catch up when many wait
+                    if (lastAdd > 0 && now - lastRelease < s) break;
+                    var values = queue.Dequeue();
+                    Commit(values);
+                    interval = step;
+                    lastAdd = now;
+                    lastRelease = (lastRelease > 0 && now - lastRelease < 2 * s) ? lastRelease + s : now;
+                }
+            }
+        }
+
+        private void Commit(float[] values)
         {
             for (int i = 0; i < Items.Count; i++) Items[i].Data[head] = values[i];
             head = (head + 1) % Capacity;
             if (count < Capacity) count++;
-            double now = clock.Elapsed.TotalSeconds;
-            if (lastAdd > 0)
-            {
-                double dt = now - lastAdd;
-                if (dt > 0.02 && dt < 1.0) interval += (dt - interval) * 0.1;      // smoothed time between samples
-            }
-            lastAdd = now;
-            // no Invalidate here: the render loop below redraws once per screen refresh
+        }
+
+        public void ClearQueue()
+        {
+            lock (queue) { queue.Clear(); arrivals.Clear(); }
         }
 
         // ---- smooth scrolling: samples arrive about 10 times a second, the screen refreshes 60 times or more.
@@ -140,16 +189,19 @@ namespace UniSolder
                 }
                 catch (Exception) { sync = false; System.Threading.Thread.Sleep(16); }
                 if (!running || drawPending) continue;
-                double idle = clock.Elapsed.TotalSeconds - lastAdd;
-                if (lastAdd <= 0 || idle > interval * 1.5 + 0.1) continue;      // no samples coming (paused, disconnected): nothing moves
+                double idle = clock.Elapsed.TotalSeconds - lastArrival;
+                bool waiting;
+                lock (queue) waiting = queue.Count > 0;
+                if (!waiting && (lastAdd <= 0 || idle > interval * 1.5 + 0.1) && clock.Elapsed.TotalSeconds - lastAdd > interval * 1.5 + 0.1) continue;      // no samples coming (paused, disconnected): nothing moves
                 drawPending = true;
-                try { BeginInvoke(new Action(() => { Invalidate(); })); }
+                try { BeginInvoke(new Action(() => { Pump(); Invalidate(); })); }
                 catch (Exception) { drawPending = false; }
             }
         }
 
         public void Clear()
         {
+            ClearQueue();
             count = 0;
             head = 0;
             Invalidate();
