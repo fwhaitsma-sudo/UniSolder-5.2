@@ -610,7 +610,8 @@ namespace SSControls
             try
             {
                 var bmp = new Bitmap(Math.Max(this.ClientSize.Width, 2), Math.Max(this.ClientSize.Height, 2));
-                using (Graphics g = Graphics.FromImage(bmp))
+                Graphics g = Graphics.FromImage(bmp);
+                try
                 {
                     long i = 0;
                     g.ScaleTransform(Math.Max(this.Width, 2) / Page.Width, Math.Max(this.Height, 2) / Page.Height);
@@ -634,6 +635,10 @@ namespace SSControls
                     {
                         if (_scales[i].PaintOver) _scales[i].Draw(ref g, ref Page);
                     }
+                }
+                finally
+                {
+                    g.Dispose();
                 }
                 var old = _backbuffer;
                 _backbuffer = bmp;
