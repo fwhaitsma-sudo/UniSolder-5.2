@@ -605,46 +605,48 @@ namespace SSControls
 
         public void _Redraw()
         {
-            long i = 0;
+            if (IsDisposed) return;
             redrawactive = true;
-            _backbuffer = null;
-            if (_backbuffer == null)
+            try
             {
-                _backbuffer = new Bitmap(Math.Max(this.ClientSize.Width, 2), Math.Max(this.ClientSize.Height, 2));
-                Graphics g = Graphics.FromImage(_backbuffer);
-
-                g.ScaleTransform(Math.Max(this.Width, 2) / Page.Width, Math.Max(this.Height, 2) / Page.Height);
-                g.TranslateTransform(Page.Margins.Left, Page.Height - Page.Margins.Bottom);
-                g.Clear(BackColor);
-
-                g.SmoothingMode = SmoothingMode.HighSpeed;
-                for (i = 0; i <= ScaleNum - 1; i++)
+                var bmp = new Bitmap(Math.Max(this.ClientSize.Width, 2), Math.Max(this.ClientSize.Height, 2));
+                using (Graphics g = Graphics.FromImage(bmp))
                 {
-                    if(!_scales[i].PaintOver) _scales[i].Draw(ref g, ref Page);
-                }
+                    long i = 0;
+                    g.ScaleTransform(Math.Max(this.Width, 2) / Page.Width, Math.Max(this.Height, 2) / Page.Height);
+                    g.TranslateTransform(Page.Margins.Left, Page.Height - Page.Margins.Bottom);
+                    g.Clear(BackColor);
 
-                g.SmoothingMode = SmoothingMode.HighQuality;
-                foreach(var d in _drawings)
-                {
-                    if (d.Visible) d.Draw(ref g, ref Page);
-                }
+                    g.SmoothingMode = SmoothingMode.HighSpeed;
+                    for (i = 0; i <= ScaleNum - 1; i++)
+                    {
+                        if (!_scales[i].PaintOver) _scales[i].Draw(ref g, ref Page);
+                    }
 
-                g.SmoothingMode = SmoothingMode.HighSpeed;
-                for (i = 0; i <= ScaleNum - 1; i++)
-                {
-                    if (_scales[i].PaintOver) _scales[i].Draw(ref g, ref Page);
-                }
+                    g.SmoothingMode = SmoothingMode.HighQuality;
+                    foreach (var d in _drawings)
+                    {
+                        if (d.Visible) d.Draw(ref g, ref Page);
+                    }
 
-                g.Dispose();
-                if (!this.IsDisposed)
-                {
-                    g = this.CreateGraphics();
-                    g.DrawImageUnscaled(_backbuffer, 0, 0);
-                    g.Dispose();
+                    g.SmoothingMode = SmoothingMode.HighSpeed;
+                    for (i = 0; i <= ScaleNum - 1; i++)
+                    {
+                        if (_scales[i].PaintOver) _scales[i].Draw(ref g, ref Page);
+                    }
                 }
+                var old = _backbuffer;
+                _backbuffer = bmp;
+                if (old != null) old.Dispose();
             }
-            Application.DoEvents();
-            redrawactive = false;
+            finally
+            {
+                redrawactive = false;      //always, so that a failed redraw cannot stop the chart for good
+            }
+            //paint through the normal paint path (OnPaint draws the back buffer): drawing straight on the window with CreateGraphics is lost
+            //when a parent paints double buffered, and Application.DoEvents here let other events run in the middle of a redraw
+            Invalidate();
+            Update();
         }
 
         public SSChart()
