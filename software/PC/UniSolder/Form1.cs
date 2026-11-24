@@ -62,6 +62,7 @@ namespace UniSolder
         private ControlTab controlTab;
         private ToolsTab toolsTab;
         private SettingsTab settingsTab;
+        private PidTools pidTools;
         private bool wasConnected;
 
         /// <summary>
@@ -192,6 +193,7 @@ namespace UniSolder
                 table.Controls.Add(bar, 1, i);
             }
             pid.Col.Controls.Add(table);
+            pidTools = new PidTools(pid, lUniSolder, () => PID, ApplyPid, () => InstrumentChange(null, null));
 
             //Firmware
             var firmware = new Page();
@@ -320,7 +322,7 @@ namespace UniSolder
                 liveBarText.Text = "\u2014";
                 liveChart.Notice = null;
             }
-            if (wasConnected && !connected) { toolsTab?.OnDisconnected(); settingsTab?.OnDisconnected(); }
+            if (wasConnected && !connected) { toolsTab?.OnDisconnected(); settingsTab?.OnDisconnected(); pidTools?.OnDisconnected(); }
             wasConnected = connected;
         }
 
@@ -487,6 +489,11 @@ namespace UniSolder
             else
             {
                 lastTemp = float.NaN;       //a new tip or iron: the first reading is not a jump
+                if (pidTools != null)
+                {
+                    pidTools.IronId = lUniSolder.IronId;
+                    pidTools.ForgetOriginal();
+                }
                 if (toolsTab != null)
                 {
                     toolsTab.IronId = lUniSolder.IronId;
@@ -509,8 +516,29 @@ namespace UniSolder
                 SetTrackBar(OVFGTrackBar, pid.OVSGain);
                 SetTrackBar(GTrackBar, pid.Gain);
                 PID = pid;
+                pidTools?.OnPidLoaded(pid);
                 UpdateConnectionStatus();
             }
+        }
+
+        /// <summary>Sends a set of PID values to the iron (the offset stays) and moves the sliders to them.</summary>
+        private void ApplyPid(UniSolderComm.PID p)
+        {
+            if (PID == null) return;
+            var offset = PID.Offset;
+            PID = null;         //so ValueChanged of the sliders does not send each value on its own
+            SetTrackBar(KpTrackBar, p.KP);
+            SetTrackBar(KiTrackBar, p.KI);
+            SetTrackBar(DGTrackBar, p.DGain);
+            SetTrackBar(OVFGTrackBar, p.OVSGain);
+            SetTrackBar(GTrackBar, p.Gain);
+            var n = new UniSolderComm.PID
+            {
+                Gain = (UInt16)GTrackBar.Value, Offset = offset, KP = (UInt16)KpTrackBar.Value, KI = (UInt16)KiTrackBar.Value,
+                DGain = (byte)DGTrackBar.Value, OVSGain = (byte)OVFGTrackBar.Value
+            };
+            PID = n;
+            lUniSolder.AppSetPIDParameters(ref PID);
         }
 
         private static void SetTrackBar(TrackBar tb, int value)
@@ -545,6 +573,7 @@ namespace UniSolder
                 if (noTip) toolsTab.OnNoTip(sample);
                 else toolsTab.OnSample(sample);
             }
+            if (!noTip) pidTools?.OnSample(sample);
             if (paused) return;
             if (float.IsNaN(refAdc))
             {
