@@ -119,6 +119,18 @@ namespace UniSolder
             powerText.Text = "heater " + power.ToString("0", CultureInfo.InvariantCulture) + " %";
         }
 
+        /// <summary>No tip in the iron: the readings are not valid, show only the set temperature.</summary>
+        public void ShowNoTip(LiveSample s)
+        {
+            actual.Text = "---";
+            actual.ForeColor = Yellow;
+            set.Text = "set " + s.Set.ToString("0", CultureInfo.InvariantCulture) + " °C";
+            status.Text = "no tip";
+            power = 0;
+            ShowPower();
+            powerText.Text = "";
+        }
+
         public void ShowNoData()
         {
             actual.Text = "---";

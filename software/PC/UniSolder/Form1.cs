@@ -1,4 +1,5 @@
-﻿
+﻿using System.Globalization;
+
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -27,7 +28,12 @@ namespace UniSolder
         private System.Windows.Forms.Timer ConnectionTimer;
         private int pidTries;
         private int livePending;
-        private readonly System.Diagnostics.Stopwatch redrawWatch = System.Diagnostics.Stopwatch.StartNew();
+        private LiveChart liveChart;
+        private Label liveReadout, liveBarText;
+        private HeaterBar liveBar;
+        private bool paused, tipOut;
+        private int liveCount, calm;
+        private float refAdc = float.NaN, refWs = float.NaN, lastTemp = float.NaN;
         private DateTime pidNext = DateTime.MinValue;
 
         public Form1()
@@ -78,35 +84,67 @@ namespace UniSolder
             connStatusLabel.ForeColor = Theme.Muted;
             logStatusLabel.ForeColor = Theme.Muted;
 
-            //Live: chart on the left, trace tick boxes and buttons on the right
-            buttonsPanel.Controls.Remove(Button8);
-            bottomPanel.Controls.Remove(buttonsPanel);
-            mainLayout.Controls.Remove(bottomPanel);
-            mainLayout.RowCount = 1;
-            mainLayout.RowStyles.Clear();
-            mainLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            //Live: readout, heater bar, chart and buttons, like the Android app (the old chart and its tick boxes are not used any more)
             Controls.Remove(mainLayout);
-            mainLayout.BackColor = Theme.Bg;
-            mainLayout.Padding = new Padding(16, 8, 16, 8);
-            panel1.BackColor = Theme.Bg;
-            panel1.Font = Theme.MakeFont(10f);
-            panel1.Padding = new Padding(16, 12, 0, 6);
-            foreach (Control c in panel1.Controls) c.BackColor = Theme.Bg;
+            liveReadout = new Label();
+            liveReadout.AutoSize = true;
+            liveReadout.Font = Theme.MakeFont(20f);
+            liveReadout.ForeColor = Theme.Text;
+            liveReadout.BackColor = Theme.Bg;
+            liveReadout.Text = "No data";
+            liveReadout.Margin = new Padding(4, 0, 0, 4);
 
-            Theme.Style(Button8, "STOP", 170);
-            Button8.Margin = new Padding(0, 16, 0, 0);
-            panel1.Controls.Add(Button8);
-            //record and dashboard buttons, like the Android app
+            var barRow = new TableLayoutPanel();
+            barRow.ColumnCount = 3;
+            barRow.RowCount = 1;
+            barRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            barRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            barRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 90F));
+            barRow.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            barRow.AutoSize = true;
+            barRow.Dock = DockStyle.Fill;
+            barRow.BackColor = Theme.Bg;
+            barRow.Margin = new Padding(0, 0, 0, 6);
+            var barLabel = new Label { Text = "Heater", AutoSize = true, Font = Theme.MakeFont(12f), ForeColor = Theme.Text, BackColor = Theme.Bg, Anchor = AnchorStyles.Left, Margin = new Padding(4, 0, 10, 0) };
+            liveBar = new HeaterBar { Dock = DockStyle.Fill, Margin = new Padding(0, 4, 10, 4) };
+            liveBarText = new Label { Text = "\u2014", AutoSize = false, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleRight, Font = Theme.MakeFont(13f), ForeColor = Theme.Text, BackColor = Theme.Bg, Margin = new Padding(0) };
+            barRow.Controls.Add(barLabel, 0, 0);
+            barRow.Controls.Add(liveBar, 1, 0);
+            barRow.Controls.Add(liveBarText, 2, 0);
+
+            liveChart = new LiveChart { Dock = DockStyle.Fill, Margin = new Padding(0) };
+
+            var pauseButton = new ThemedButton();
+            Theme.Style(pauseButton, "Pause", 150);
+            pauseButton.Click += (s, e) =>
+            {
+                paused = !paused;
+                pauseButton.Text = paused ? "Resume" : "Pause";
+            };
             var recButton = new ThemedButton { Strong = true };
-            Theme.Style(recButton, "Record", 170);
-            recButton.Margin = new Padding(0, 8, 0, 0);
+            Theme.Style(recButton, "Record", 150);
             var dashButton = new ThemedButton();
-            Theme.Style(dashButton, "Dashboard", 170);
-            dashButton.Margin = new Padding(0, 8, 0, 0);
-            panel1.Controls.Add(recButton);
-            panel1.Controls.Add(dashButton);
+            Theme.Style(dashButton, "Dashboard", 150);
+            var liveButtons = Theme.Row(pauseButton, recButton, dashButton);
+            liveButtons.Margin = new Padding(0, 8, 0, 0);
+
+            var liveLayout = new TableLayoutPanel();
+            liveLayout.Dock = DockStyle.Fill;
+            liveLayout.ColumnCount = 1;
+            liveLayout.RowCount = 4;
+            liveLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            liveLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            liveLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            liveLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            liveLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            liveLayout.Padding = new Padding(16, 8, 16, 8);
+            liveLayout.BackColor = Theme.Bg;
+            liveLayout.Controls.Add(liveReadout, 0, 0);
+            liveLayout.Controls.Add(barRow, 0, 1);
+            liveLayout.Controls.Add(liveChart, 0, 2);
+            liveLayout.Controls.Add(liveButtons, 0, 3);
             var live = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Bg };
-            live.Controls.Add(mainLayout);
+            live.Controls.Add(liveLayout);
 
             //PID: one row per slider, label on the left
             var pid = new Page();
@@ -268,6 +306,14 @@ namespace UniSolder
             else if (!connected || PID != null)
             {
                 pidTries = 0;
+            }
+            if (connected && !wasConnected) ResetLive();
+            if (!connected && wasConnected)
+            {
+                liveReadout.Text = "No data";
+                liveBar.Value = 0;
+                liveBarText.Text = "\u2014";
+                liveChart.Notice = null;
             }
             if (wasConnected && !connected) toolsTab?.OnDisconnected();
             wasConnected = connected;
@@ -435,6 +481,7 @@ namespace UniSolder
             }
             else
             {
+                lastTemp = float.NaN;       //a new tip or iron: the first reading is not a jump
                 if (toolsTab != null)
                 {
                     toolsTab.IronId = lUniSolder.IronId;
@@ -469,7 +516,7 @@ namespace UniSolder
         public delegate void LiveDataReceivedDelegate(object sender, UniSolderComm.LiveDataReceivedEventData e);
         private void LiveDataReceived(object sender, UniSolderComm.LiveDataReceivedEventData e)
         {
-            if (SsChart2.InvokeRequired)
+            if (InvokeRequired)
             {
                 //the UI thread must never fall behind the data: posted messages are served before mouse and paint messages, so a queue
                 //that grows freezes the whole window. More than 4 waiting samples: drop this one.
@@ -478,88 +525,80 @@ namespace UniSolder
                     System.Threading.Interlocked.Decrement(ref livePending);
                     return;
                 }
-                try { SsChart2.BeginInvoke(new LiveDataReceivedDelegate(LiveDataReceived), sender, e); }
+                try { BeginInvoke(new LiveDataReceivedDelegate(LiveDataReceived), sender, e); }
                 catch (InvalidOperationException) { System.Threading.Interlocked.Decrement(ref livePending); }      //window closed
+                return;
             }
-            else
+            if (livePending > 0) System.Threading.Interlocked.Decrement(ref livePending);
+            var sample = LiveSample.Parse(e.Data);
+            if (sample == null) return;
+            float power = sample.PowerPct;
+            bool noTip = TipAbsent(sample.Temp);
+            liveChart.Notice = noTip ? "No tip" : null;
+            if (toolsTab != null)
             {
-                if (livePending > 0) System.Threading.Interlocked.Decrement(ref livePending);
-                var b = e.Data;
-                if (b[0] == 3 && toolsTab != null)
-                {
-                    var sample = LiveSample.Parse(b);
-                    if (sample != null) toolsTab.OnSample(sample);
-                }
-                switch (b[0])
-                {
-                    case 3:
-                        if (Button8.Text != "START")
-                        {
-                            SsChart2.Drawings(0).Points[0].X = SsChart2.Drawings(1).Points[CPoint].X;
-                            SsChart2.Drawings(0).Points[1].X = SsChart2.Drawings(1).Points[CPoint].X;
-
-                            //CTTemp
-                            SsChart2.Drawings(2).Points[CPoint].Y = b[3] * 2.0F;
-
-                            //CTemp
-                            SsChart2.Drawings(3).Points[CPoint].Y = b[4] * 0.5F + b[5] * 128.0F;
-
-                            //ADCTemp
-                            SsChart2.Drawings(4).Points[CPoint].Y = b[6] * 0.5F + b[7] * 128.0F;
-
-                            //TAvgF
-                            SsChart2.Drawings(5).Points[CPoint].Y = b[8] * 0.5F + b[9] * 128.0F;
-
-                            //CHRes - Heater resistance x10
-                            SsChart2.Drawings(8).Points[CPoint].Y = (short)(b[10] | (b[11] << 8));
-
-                            //TAvgP
-                            SsChart2.Drawings(9).Points[CPoint].Y = b[12] * 0.5F + b[13] * 128.0F;
-
-                            //Power On/Off
-                            SsChart2.Drawings(7).Points[CPoint].Y = b[14] != 0 ? 100.0F : 0.0F;
-
-                            //WSDelta
-                            SsChart2.Drawings(10).Points[0].Y = (b[15] * 1.0F + b[16] * 256.0F - 2048.0F) / 4.0F + 200.0F;
-                            SsChart2.Drawings(10).Points[1].Y = (b[17] * 1.0F + b[18] * 256.0F - 2048.0F) / 4.0F + 200.0F;
-                            SsChart2.Drawings(10).Points[2].Y = (b[19] * 1.0F + b[20] * 256.0F - 2048.0F) / 4.0F + 200.0F;
-                            SsChart2.Drawings(10).Points[3].Y = (b[21] * 1.0F + b[22] * 256.0F - 2048.0F) / 4.0F + 200.0F;
-                            SsChart2.Drawings(10).Points[4].Y = (b[23] * 1.0F + b[24] * 256.0F - 2048.0F) / 4.0F + 200.0F;
-                            SsChart2.Drawings(10).Points[5].Y = (b[25] * 1.0F + b[26] * 256.0F - 2048.0F) / 4.0F + 200.0F;
-                            SsChart2.Drawings(10).Points[6].Y = (b[27] * 1.0F + b[28] * 256.0F - 2048.0F) / 4.0F + 200.0F;
-
-                            //DestinationReached
-                            SsChart2.Drawings(11).Points[CPoint].Y = b[31] * 100.0F;
-
-                            //Duty
-                            SsChart2.Drawings(1).Points[CPoint].Y = (b[32] * 1.0F + b[33] * 256.0F) / 128.0F;
-
-                            ////SsChart2.Drawings(12).Points(CPoint).Y = (b(34) * 1.0 + b(35) * 256.0);
-                            //TAvgF
-                            //SsChart2.Drawings(6).Points(CPoint).Y = (b(10) * 1.0 + b(11) * 256.0 - 2048.0) / 4.0 + 200.0
-
-                            CPoint = (CPoint + 1) % 256;
-                        }
-                        break;
-                }
-                //the chart takes its points from every sample but is drawn at most about 10 times a second
-                if (!SsChart2.redrawactive && redrawWatch.ElapsedMilliseconds >= 90)
-                {
-                    redrawWatch.Restart();
-                    SsChart2.Drawings(2).Visible = checkBox1.Checked; //CTTemp
-                    SsChart2.Drawings(3).Visible = checkBox2.Checked; //CTemp
-                    SsChart2.Drawings(4).Visible = checkBox3.Checked; //ADCTemp
-                    SsChart2.Drawings(5).Visible = checkBox4.Checked; //TAvgF
-                    SsChart2.Drawings(9).Visible = checkBox6.Checked; //TavgP
-                    SsChart2.Drawings(11).Visible = checkBox7.Checked; //DestinationReached
-                    SsChart2.Drawings(1).Visible = checkBox8.Checked; //Duty
-                    SsChart2.Drawings(8).Visible = checkBox9.Checked; //CHRes
-                    SsChart2.Drawings(7).Visible = checkBox10.Checked; //Power On/Off
-                    SsChart2.Drawings(10).Visible = checkBox11.Checked; //WsDelta
-
-                    SsChart2._Redraw();
-                }
+                if (noTip) toolsTab.OnNoTip(sample);
+                else toolsTab.OnSample(sample);
             }
+            if (paused) return;
+            if (float.IsNaN(refAdc))
+            {
+                refAdc = sample.Adc;
+                refWs = sample.Ws0;
+            }
+            refAdc += (sample.Adc - refAdc) * 0.01f;       //slow reference: the traces show changes around it
+            refWs += (sample.Ws0 - refWs) * 0.01f;
+            float nan = float.NaN;
+            liveChart.Add(new float[]
+            {
+                sample.Set,
+                noTip ? nan : sample.Temp,
+                power * 5f,
+                noTip ? nan : sample.PidInput,
+                noTip ? nan : sample.Avg,
+                noTip ? nan : 250f + (sample.Adc - refAdc) * 8f,      //8 units = 1 ADC count
+                noTip ? nan : sample.Resistance,                      //heater resistance in ohm, drawn on the right axis
+                noTip ? nan : 250f + (sample.Ws0 - refWs),
+                sample.HeaterOn ? 100f : 0f
+            });
+            if (++liveCount % 5 == 0)
+            {
+                liveReadout.Text = noTip
+                    ? string.Format(CultureInfo.InvariantCulture, "Set {0:0}\u00B0C    No tip", sample.Set)
+                    : string.Format(CultureInfo.InvariantCulture, "Set {0:0}\u00B0C    Actual {1:0}\u00B0C", sample.Set, sample.Temp);
+                liveBar.Value = (int)Math.Round(power);
+                liveBarText.Text = string.Format(CultureInfo.InvariantCulture, "{0:0}%", power);
+            }
+        }
+
+        /// <summary>
+        /// Tells whether the tip is out of the iron. The station sends no flag for it, but with the sensor open the temperature
+        /// reading jumps wildly (up to over 500 and down to 0). A jump of more than 40 C between two samples (a real tip cannot change
+        /// that fast), or a reading outside 1..480 C, marks the tip as removed; it counts as back when 8 samples in a row are calm.
+        /// </summary>
+        private bool TipAbsent(float t)
+        {
+            bool bad = t < 1f || t > 480f || (!float.IsNaN(lastTemp) && Math.Abs(t - lastTemp) > 40f);
+            lastTemp = t;
+            if (!tipOut)
+            {
+                if (bad) { tipOut = true; calm = 0; }
+            }
+            else if (bad) calm = 0;
+            else if (++calm >= 8) tipOut = false;
+            return tipOut;
+        }
+
+        /// <summary>A new connection: empty chart, fresh references.</summary>
+        private void ResetLive()
+        {
+            liveChart.Clear();
+            liveChart.Notice = null;
+            refAdc = float.NaN;
+            refWs = float.NaN;
+            tipOut = false;
+            lastTemp = float.NaN;
+            calm = 0;
         }
 
         private void Button3_Click(object sender, EventArgs e)

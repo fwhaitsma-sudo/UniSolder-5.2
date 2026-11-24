@@ -15,6 +15,8 @@ namespace UniSolder
         public bool HeaterOn;
         public bool Reached;
         public float Resistance;    // heater resistance in ohms (0 = not measured)
+        public float PidInput;      // temperature the PID loop reacts to: smoothed temperature plus the derivative term
+        public float Ws0;           // first wave-shaping value (correction after the heater switched off), 0 = none
 
         /// <summary>Heater power in percent of full power.</summary>
         public float PowerPct => Math.Max(0f, Math.Min(100f, Duty * 100f / 512f));
@@ -31,7 +33,9 @@ namespace UniSolder
                 Duty = (b[32] + b[33] * 256) / 128f,
                 HeaterOn = b[14] != 0,
                 Reached = b[31] != 0,
-                Resistance = (short)(b[10] | (b[11] << 8)) / 10f
+                Resistance = (short)(b[10] | (b[11] << 8)) / 10f,
+                PidInput = b[12] * 0.5f + b[13] * 128f,
+                Ws0 = (b[15] | (b[16] << 8)) - 2048f
             };
         }
     }

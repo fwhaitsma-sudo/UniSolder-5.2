@@ -288,7 +288,7 @@ namespace UniSolder
             var now = DateTime.Now;
 
             // tip health: the heater resistance is only meaningful while it is measured (not zero)
-            if (s.Resistance > 0.05f)
+            if (s.Resistance > 0.05f && s.Resistance < LiveChart.MaxOhm)
             {
                 resNow = s.Resistance;
                 resSum += s.Resistance;
@@ -334,6 +334,12 @@ namespace UniSolder
                 overheatSince = DateTime.MinValue;
                 overheatAlerted = false;
             }
+        }
+
+        /// <summary>A packet while no tip is in the iron: its readings are not valid, nothing is recorded or counted.</summary>
+        public void OnNoTip(LiveSample s)
+        {
+            if (dashboard != null && !dashboard.IsDisposed) dashboard.ShowNoTip(s);
         }
 
         public void OnDisconnected()
