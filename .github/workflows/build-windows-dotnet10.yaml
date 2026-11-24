@@ -4,10 +4,10 @@ name: Windows Unisolder application (.NET 10)
 
 on:
   workflow_dispatch:
-  # builds of other branches than display-step start by themselves and are published as a pre-release
+  # builds of other branches than stable start by themselves and are published as a pre-release
   push:
     branches-ignore:
-      - display-step
+      - stable
     paths:
       - 'software/PC/**'
       - '.github/workflows/build-windows-dotnet10.yaml'
@@ -43,7 +43,7 @@ jobs:
         path: software/PC/publish
         if-no-files-found: error
     # Pre-release with the whole publish folder as a zip, so it can be downloaded without a GitHub login
-    # (not for display-step: those are released by hand)
+    # (not for stable: those are released by hand)
     - name: Publish pre-release
       if: github.event_name == 'push'
       shell: bash

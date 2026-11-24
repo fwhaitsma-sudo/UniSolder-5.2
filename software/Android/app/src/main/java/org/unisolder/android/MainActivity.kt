@@ -33,7 +33,7 @@ private const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
 private const val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT
 private const val REQ_HEX = 1
 private const val REQ_BT = 2
-private const val BT_INSTRUCTIONS_URL = "https://github.com/fwhaitsma-sudo/UniSolder-5.2/blob/display-step/software/esp32/README.md"
+private const val BT_INSTRUCTIONS_URL = "https://github.com/fwhaitsma-sudo/UniSolder-5.2/blob/stable/software/esp32/README.md"
 
 class MainActivity : Activity(), DeviceLink.Listener {
     private lateinit var link: DeviceLink

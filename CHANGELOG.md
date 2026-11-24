@@ -1,6 +1,6 @@
 # Changelog
 
-Features and changes implemented in the `display-step` branch of the fork, on top of sparkybg/UniSolder-5.2 `main`.
+Features and changes implemented in the `stable` branch of the fork, on top of sparkybg/UniSolder-5.2 `main`.
 Only what is in the firmware now is listed. Reverted and superseded changes are left out.
 
 ## Display and settings
@@ -88,4 +88,4 @@ Only what is in the firmware now is listed. Reverted and superseded changes are 
 
 ## Build workflows
 
-- **Firmware test builds:** a push to any branch other than `display-step` that changes the firmware builds it automatically (artifact only). Builds of `display-step` are started by hand and publish the release with the `.hex`.
+- **Firmware test builds:** a push to any branch other than `stable` that changes the firmware builds it automatically (artifact only). Builds of `stable` are started by hand and publish the release with the `.hex`.
