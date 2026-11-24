@@ -183,6 +183,37 @@ namespace UniSolder
         private static extern bool GetWindowRect(IntPtr hWnd, out RECT r);
         private struct RECT { public int Left, Top, Right, Bottom; }
 
+        /// <summary>
+        /// The header is a window of its own that Windows paints white to the right of the last column, out of reach of this control's
+        /// painting. So the last column always takes the rest of the width and that strip does not exist.
+        /// </summary>
+        private void FitLastColumn()
+        {
+            if (!IsHandleCreated || Columns.Count == 0 || View != View.Details) return;
+            int others = 0;
+            for (int i = 0; i < Columns.Count - 1; i++) others += Columns[i].Width;
+            int w = Math.Max(60, ClientSize.Width - others);
+            if (Columns[Columns.Count - 1].Width != w) Columns[Columns.Count - 1].Width = w;
+        }
+
+        protected override void OnSizeChanged(EventArgs e)
+        {
+            base.OnSizeChanged(e);
+            FitLastColumn();
+        }
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            FitLastColumn();
+        }
+
+        protected override void OnColumnWidthChanged(ColumnWidthChangedEventArgs e)
+        {
+            base.OnColumnWidthChanged(e);
+            FitLastColumn();
+        }
+
         protected override void WndProc(ref Message m)
         {
             base.WndProc(ref m);
