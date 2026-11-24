@@ -29,6 +29,8 @@ namespace UniSolder
         private int pidTries;
         private int livePending;
         private LiveChart liveChart;
+        private readonly System.Diagnostics.Stopwatch liveClock = System.Diagnostics.Stopwatch.StartNew();
+        private double liveLast, liveRate;
         private Label liveReadout, liveBarText;
         private HeaterBar liveBar;
         private bool paused, tipOut;
@@ -124,11 +126,21 @@ namespace UniSolder
                 paused = !paused;
                 pauseButton.Text = paused ? "Resume" : "Pause";
             };
+            var zoomButton = new ThemedButton();
+            int[] zoomSteps = { 500, 250, 120 };
+            int zoomAt = 0;
+            Theme.Style(zoomButton, "Zoom: 1x", 150);
+            zoomButton.Click += (s, e) =>
+            {
+                zoomAt = (zoomAt + 1) % zoomSteps.Length;
+                liveChart.WindowSamples = zoomSteps[zoomAt];
+                zoomButton.Text = "Zoom: " + (500 / zoomSteps[zoomAt]) + "x";
+            };
             var recButton = new ThemedButton { Strong = true };
             Theme.Style(recButton, "Record", 150);
             var dashButton = new ThemedButton();
             Theme.Style(dashButton, "Dashboard", 150);
-            var liveButtons = Theme.Row(pauseButton, recButton, dashButton);
+            var liveButtons = Theme.Row(pauseButton, zoomButton, recButton, dashButton);
             liveButtons.Margin = new Padding(0, 8, 0, 0);
 
             var liveLayout = new TableLayoutPanel();
@@ -599,11 +611,14 @@ namespace UniSolder
                 noTip ? nan : 250f + (sample.Ws0 - refWs),
                 sample.HeaterOn ? 100f : 0f
             });
+            double now = liveClock.Elapsed.TotalSeconds;
+            if (liveLast > 0 && now > liveLast) liveRate += (1.0 / (now - liveLast) - liveRate) * 0.1;
+            liveLast = now;
             if (++liveCount % 5 == 0)
             {
                 liveReadout.Text = noTip
                     ? string.Format(CultureInfo.InvariantCulture, "Set {0:0}\u00B0C    No tip", sample.Set)
-                    : string.Format(CultureInfo.InvariantCulture, "Set {0:0}\u00B0C    Actual {1:0}\u00B0C", sample.Set, sample.Temp);
+                    : string.Format(CultureInfo.InvariantCulture, "Set {0:0}\u00B0C    Actual {1:0}\u00B0C    ({2:0.0} samples/s)", sample.Set, sample.Temp, liveRate);
                 liveBar.Value = (int)Math.Round(power);
                 liveBarText.Text = string.Format(CultureInfo.InvariantCulture, "{0:0}%", power);
             }
