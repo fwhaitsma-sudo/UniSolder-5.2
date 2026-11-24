@@ -20,7 +20,7 @@ namespace UniSolder
         private readonly Recorder recorder = new Recorder();
         private readonly Label recordText = new Label();
         private readonly ThemedButton recordButton = new ThemedButton();
-        private readonly ListView sessions = new ListView();
+        private readonly DarkListView sessions = new DarkListView();
         private readonly Label tipText = new Label();
         private readonly ThemedCheck overheatCheck = new ThemedCheck();
         private readonly NotifyIcon notify = new NotifyIcon();
@@ -85,7 +85,7 @@ namespace UniSolder
             sessions.Columns.Add("Session", u * 22);
             sessions.Columns.Add("Length", u * 9);
             sessions.Columns.Add("Max °C", u * 9);
-            sessions.Columns.Add("Avg power", u * 11);
+            sessions.Columns.Add("Avg power", u * 12);
             sessions.Columns.Add("Heat-up", u * 10);
             sessions.Columns.Add("Rows", u * 8);
             Theme.StyleList(sessions);

@@ -171,6 +171,58 @@ namespace UniSolder
         }
     }
 
+    /// <summary>
+    /// ListView whose empty areas are dark: the dark Explorer theme (used for the dark scroll bars) draws column lines in the empty part
+    /// below the rows and a white filler in the header to the right of the last column. Both are painted over after each paint.
+    /// </summary>
+    class DarkListView : ListView
+    {
+        [DllImport("user32.dll")]
+        private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+        [DllImport("user32.dll")]
+        private static extern bool GetWindowRect(IntPtr hWnd, out RECT r);
+        private struct RECT { public int Left, Top, Right, Bottom; }
+
+        protected override void WndProc(ref Message m)
+        {
+            base.WndProc(ref m);
+            if (m.Msg == 0x000F && IsHandleCreated && View == View.Details)       // WM_PAINT
+            {
+                try
+                {
+                    int headerH = 0;
+                    IntPtr hdr = SendMessage(Handle, 0x101F, IntPtr.Zero, IntPtr.Zero);   // LVM_GETHEADER
+                    if (hdr != IntPtr.Zero)
+                    {
+                        RECT r;
+                        if (GetWindowRect(hdr, out r)) headerH = r.Bottom - r.Top;
+                    }
+                    int colsRight = 0;
+                    foreach (ColumnHeader c in Columns) colsRight += c.Width;
+                    using (var g = CreateGraphics())
+                    using (var field = new SolidBrush(Theme.Field))
+                    using (var btn = new SolidBrush(Theme.Button))
+                    {
+                        if (headerH > 0 && colsRight < ClientSize.Width)
+                            g.FillRectangle(btn, colsRight, 0, ClientSize.Width - colsRight, headerH);
+                        // cells a row has no sub item for (an empty session has only two) are not drawn by the owner draw
+                        using (var sel = new SolidBrush(Color.FromArgb(96, 76, 0)))
+                            foreach (ListViewItem it in Items)
+                            {
+                                if (it.SubItems.Count >= Columns.Count) continue;
+                                var last = it.SubItems[it.SubItems.Count - 1].Bounds;
+                                if (last.Right < ClientSize.Width) g.FillRectangle(it.Selected ? sel : field, last.Right, last.Top, ClientSize.Width - last.Right, last.Height);
+                            }
+                        int rowsBottom = headerH;
+                        if (Items.Count > 0) rowsBottom = Math.Max(rowsBottom, Items[Items.Count - 1].GetBounds(ItemBoundsPortion.Entire).Bottom);
+                        if (rowsBottom < ClientSize.Height) g.FillRectangle(field, 0, rowsBottom, ClientSize.Width, ClientSize.Height - rowsBottom);
+                    }
+                }
+                catch (Exception) { }
+            }
+        }
+    }
+
     /// <summary>Rounded button in the colours of the Android app: grey, yellow for the main action, pill shape for the page bar.</summary>
     class ThemedButton : Button
     {
