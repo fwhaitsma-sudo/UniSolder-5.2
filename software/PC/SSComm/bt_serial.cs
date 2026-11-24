@@ -20,6 +20,9 @@ namespace SSComm
         private const int RXFIFOSIZE = 32768;
         /// <summary>The station sends live data about 10 times a second: no data for this long means the link is gone.</summary>
         private const long SilenceMs = 6000;
+        /// <summary>The station only sends live data while frames arrive from us (the link is active 3 s after the last good frame):
+        /// an all zero packet (a no-op command) every second keeps it going, like the Android app does.</summary>
+        private const long KeepAliveMs = 1000;
 
         /// <summary>COM port of the paired bridge, for example COM5.</summary>
         public string PortName = "";
@@ -167,10 +170,18 @@ namespace SSComm
             var acc = new byte[1024];
             var tmp = new byte[256];
             int n = 0;
+            long lastKeep = 0;
             try
             {
                 while (!thExit)
                 {
+                    long now = Environment.TickCount64;
+                    if (lastKeep == 0 || now - lastKeep >= KeepAliveMs)
+                    {
+                        lastKeep = now;
+                        var zero = new byte[64];
+                        Write(ref zero, 0, 64);
+                    }
                     int r;
                     try { r = sp.Read(tmp, 0, tmp.Length); }
                     catch (TimeoutException) { continue; }
