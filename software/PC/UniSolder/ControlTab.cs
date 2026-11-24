@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Windows.Forms;
 
@@ -127,7 +128,7 @@ namespace UniSolder
 
             // settings
             col.Controls.Add(Theme.Heading("Settings backup"));
-            col.Controls.Add(Theme.Hint("Saves the station settings (not the pincode) to a file, or writes them back from a file. The station restarts after a restore. The file is the same format as the Android app uses."));
+            col.Controls.Add(Theme.Hint("Saves the station settings (not the pincode), the saved PID values and the ramp mode values, active profile and stored profiles to a file, or writes them back from a file. The station restarts after a restore. The file is the same format as the Android app uses."));
             Theme.Style(saveButton, "Save settings...", 190);
             Theme.Style(restoreButton, "Restore settings...", 210);
             saveButton.Click += Save_Click;
@@ -329,6 +330,53 @@ namespace UniSolder
             if (s != null) { holdUntil = DateTime.MinValue; ApplyState(s); }
         }
 
+        /// <summary>Ramp mode values, active steps and stored profiles; null when the station has no step profiles (protocol below 9).</summary>
+        private RampBackup ReadRamp(int protocol)
+        {
+            if (protocol < 9) return null;
+            var p = comm.GetRampPars(UniSolderComm.RAMP_PARS9);
+            var st = comm.GetRampSteps(protocol >= 10);
+            if (p == null || st == null) return null;
+            List<UniSolderComm.RampSlot> slots = null;
+            if (protocol >= 10)
+            {
+                slots = new List<UniSolderComm.RampSlot>();
+                for (int k = 0; k < UniSolderComm.RAMP_SLOTS; k++)
+                {
+                    var sl = comm.RampSlotRead(k);
+                    if (sl == null) return null;
+                    slots.Add(sl);
+                }
+            }
+            return new RampBackup { Pars = p, Count = st.Count, Steps = st.Steps, Active = st.Slot, Slots = slots };
+        }
+
+        /// <summary>Writes the ramp part of a backup. The station checks values and steps against each other, so when one order is refused the other is tried.</summary>
+        private bool WriteRamp(RampBackup r, int protocol)
+        {
+            if (protocol < 9) return true;
+            int st = comm.SetRampPars(r.Pars);
+            if (st == 0) st = comm.SetRampSteps(r.Count, r.Steps);
+            else if (st == 2)
+            {
+                st = comm.SetRampSteps(r.Count, r.Steps);
+                if (st == 0) st = comm.SetRampPars(r.Pars);
+            }
+            if (st != 0) return false;
+            if (protocol >= 10 && r.Slots != null)
+            {
+                for (int k = 0; k < UniSolderComm.RAMP_SLOTS; k++)
+                {
+                    UniSolderComm.RampSlot sl = null;
+                    foreach (var x in r.Slots) if (x.Slot == k && x.Count > 0) sl = x;
+                    int res = sl != null ? comm.RampSlotWrite(k, sl.Name, sl.Count, sl.Steps) : comm.RampSlotDelete(k);
+                    if (res != 0) return false;
+                }
+                if (r.Active >= 0 && comm.RampSlotLoad(r.Active) != 0) return false;
+            }
+            return true;
+        }
+
         // ---------------------------------------------------------------- settings backup
 
         private void Save_Click(object sender, EventArgs e)
@@ -339,13 +387,16 @@ namespace UniSolder
                 MessageBox.Show(this, "The station did not answer, nothing was saved.", "Save settings", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
+            int proto = info != null ? info.Protocol : 0;
+            var pid = data != null && proto >= 5 ? comm.ReadPidSlots() : null;
+            var ramp = ReadRamp(proto);
             var fd = new SaveFileDialog();
             fd.Filter = "Settings file|*.txt";
             fd.FileName = "unisolder-settings-" + DateTime.Now.ToString("yyyyMMdd-HHmm", CultureInfo.InvariantCulture) + ".txt";
             if (fd.ShowDialog(this) != DialogResult.OK) return;
             try
             {
-                File.WriteAllText(fd.FileName, BackupFile.Format(data, info, state), new UTF8Encoding(false));
+                File.WriteAllText(fd.FileName, BackupFile.Format(data, info, state, pid, ramp), new UTF8Encoding(false));
                 SSComm.Log.Info("Settings saved to " + fd.FileName);
                 MessageBox.Show(this, "Settings saved.", "Save settings", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
@@ -368,7 +419,9 @@ namespace UniSolder
                 return;
             }
             string summary;
-            var data = BackupFile.Parse(text, out summary);
+            List<byte[]> pid;
+            RampBackup ramp;
+            var data = BackupFile.Parse(text, out summary, out pid, out ramp);
             if (data == null)
             {
                 MessageBox.Show(this, "This is not a UniSolder settings file.", "Restore settings", MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -377,7 +430,11 @@ namespace UniSolder
             var ask = MessageBox.Show(this, "Write the settings from this file to the station?\n\n" + summary + "\n\nThe station restarts afterwards.",
                 "Restore settings", MessageBoxButtons.OKCancel, MessageBoxIcon.Question);
             if (ask != DialogResult.OK) return;
-            if (comm.WriteSettings(data))
+            int proto = info != null ? info.Protocol : 0;
+            bool ok = comm.WriteSettings(data);
+            if (ok && pid != null && proto >= 5) ok = comm.WritePidSlots(pid);
+            if (ok && ramp != null) ok = WriteRamp(ramp, proto);
+            if (ok)
             {
                 comm.RestartDevice();
                 SSComm.Log.Info("Settings restored");
@@ -392,10 +449,25 @@ namespace UniSolder
         }
     }
 
+    /// <summary>Ramp mode part of a backup: 16 values, active steps, the stored profile they came from (-1 none), stored profiles (null = not in the file).</summary>
+    class RampBackup
+    {
+        public int[] Pars;
+        public int Count;
+        public int[] Steps;
+        public int Active;
+        public List<UniSolderComm.RampSlot> Slots;
+    }
+
     /// <summary>Settings backup file, identical to the Android app's format so a backup can be used on either.</summary>
     static class BackupFile
     {
-        public static string Format(byte[] data, UniSolderComm.AppInfo info, UniSolderComm.DeviceState state)
+        private static string Ints(int[] a)
+        {
+            return string.Join(",", a.Select(x => x.ToString(CultureInfo.InvariantCulture)).ToArray());
+        }
+
+        public static string Format(byte[] data, UniSolderComm.AppInfo info, UniSolderComm.DeviceState state, List<byte[]> pid = null, RampBackup ramp = null)
         {
             var sb = new StringBuilder();
             sb.Append("UniSolder settings backup\n");
@@ -406,22 +478,90 @@ namespace UniSolder
             sb.Append("data=");
             foreach (var b in data) sb.Append(b.ToString("X2", CultureInfo.InvariantCulture));
             sb.Append('\n');
+            if (pid != null)
+            {
+                sb.Append("pid=");
+                foreach (var slot in pid) foreach (var b in slot) sb.Append(b.ToString("X2", CultureInfo.InvariantCulture));
+                sb.Append('\n');
+            }
+            if (ramp != null)
+            {
+                sb.Append("ramp=").Append(Ints(ramp.Pars)).Append('\n');
+                sb.Append("steps=").Append(ramp.Count).Append(';').Append(Ints(ramp.Steps)).Append(';').Append(ramp.Active).Append('\n');
+                if (ramp.Slots != null)
+                {
+                    sb.Append("profiles=").Append(UniSolderComm.RAMP_SLOTS).Append('\n');
+                    foreach (var sl in ramp.Slots)
+                    {
+                        if (sl.Count == 0) continue;
+                        sb.Append("profile").Append(sl.Slot + 1).Append('=');
+                        foreach (char c in sl.Name) sb.Append(((int)c & 0xFF).ToString("X2", CultureInfo.InvariantCulture));
+                        sb.Append(';').Append(sl.Count).Append(';').Append(Ints(sl.Steps)).Append('\n');
+                    }
+                }
+            }
             return sb.ToString();
         }
 
-        public static byte[] Parse(string text, out string summary)
+        private static int[] ParseInts(string s, int n)
+        {
+            var p = s.Split(',');
+            if (p.Length != n) return null;
+            var o = new int[n];
+            for (int i = 0; i < n; i++)
+                if (!int.TryParse(p[i].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out o[i])) return null;
+            return o;
+        }
+
+        private static RampBackup ParseRamp(List<string> lines)
+        {
+            string rl = lines.FirstOrDefault(l => l.StartsWith("ramp="));
+            string sl = lines.FirstOrDefault(l => l.StartsWith("steps="));
+            if (rl == null || sl == null) return null;
+            var pars = ParseInts(rl.Substring(5), UniSolderComm.RAMP_PARS9);
+            var sp = sl.Substring(6).Split(';');
+            if (pars == null || sp.Length != 3) return null;
+            int count, active;
+            if (!int.TryParse(sp[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out count)) return null;
+            var steps = ParseInts(sp[1], UniSolderComm.RAMP_STEPS * 3);
+            if (steps == null || !int.TryParse(sp[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out active)) return null;
+            List<UniSolderComm.RampSlot> slots = null;
+            if (lines.Any(l => l.StartsWith("profiles=")))
+            {
+                slots = new List<UniSolderComm.RampSlot>();
+                for (int k = 0; k < UniSolderComm.RAMP_SLOTS; k++)
+                {
+                    string prefix = "profile" + (k + 1) + "=";
+                    string pl = lines.FirstOrDefault(l => l.StartsWith(prefix));
+                    if (pl == null) continue;
+                    var f = pl.Substring(prefix.Length).Split(';');
+                    if (f.Length != 3 || f[0].Length % 2 != 0) return null;
+                    var name = new StringBuilder();
+                    for (int i = 0; i < f[0].Length / 2; i++)
+                    {
+                        int c;
+                        if (!int.TryParse(f[0].Substring(i * 2, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out c)) return null;
+                        name.Append((char)c);
+                    }
+                    int cnt;
+                    if (!int.TryParse(f[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out cnt)) return null;
+                    var st = ParseInts(f[2], UniSolderComm.RAMP_STEPS * 3);
+                    if (st == null) return null;
+                    slots.Add(new UniSolderComm.RampSlot { Slot = k, Name = name.ToString(), Count = cnt, Steps = st });
+                }
+            }
+            return new RampBackup { Pars = pars, Count = count, Steps = steps, Active = active, Slots = slots };
+        }
+
+        public static byte[] Parse(string text, out string summary, out List<byte[]> pid, out RampBackup ramp)
         {
             summary = "";
+            pid = null;
+            ramp = null;
             var lines = new List<string>();
             foreach (var l in text.Split('\n')) lines.Add(l.Trim());
             if (lines.Count == 0 || lines[0] != "UniSolder settings backup") return null;
-            string dataLine = null;
-            var sum = new List<string>();
-            foreach (var l in lines)
-            {
-                if (dataLine == null && l.StartsWith("data=")) dataLine = l;
-                if (l.StartsWith("saved=") || l.StartsWith("firmware=")) sum.Add(l);
-            }
+            string dataLine = lines.FirstOrDefault(l => l.StartsWith("data="));
             if (dataLine == null) return null;
             string hex = dataLine.Substring(5);
             if (hex.Length != UniSolderComm.SETTINGS_SIZE * 2) return null;
@@ -431,6 +571,29 @@ namespace UniSolder
                 byte v;
                 if (!byte.TryParse(hex.Substring(i * 2, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out v)) return null;
                 outb[i] = v;
+            }
+            string pidLine = lines.FirstOrDefault(l => l.StartsWith("pid="));
+            int n = UniSolderComm.PID_SLOTS * UniSolderComm.PID_SLOT_LEN;
+            if (pidLine != null && pidLine.Length == 4 + n * 2)
+            {
+                var raw = new byte[n];
+                for (int i = 0; i < n; i++)
+                    if (!byte.TryParse(pidLine.Substring(4 + i * 2, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out raw[i])) return null;
+                pid = new List<byte[]>();
+                for (int k = 0; k < UniSolderComm.PID_SLOTS; k++)
+                {
+                    var d = new byte[UniSolderComm.PID_SLOT_LEN];
+                    Array.Copy(raw, k * UniSolderComm.PID_SLOT_LEN, d, 0, d.Length);
+                    pid.Add(d);
+                }
+            }
+            var sum = lines.Where(l => l.StartsWith("saved=") || l.StartsWith("firmware=")).ToList();
+            if (pid != null) sum.Add("Saved PID values: " + pid.Count(d => d[0] == 0xC7) + " iron(s)");
+            ramp = ParseRamp(lines);
+            if (ramp != null)
+            {
+                sum.Add("Ramp mode values and the active profile (" + ramp.Count + " step" + (ramp.Count == 1 ? "" : "s") + ")");
+                if (ramp.Slots != null) sum.Add("Stored profiles: " + ramp.Slots.Count + " (profiles in the station that are not in the file are deleted)");
             }
             summary = string.Join("\n", sum.ToArray());
             return outb;

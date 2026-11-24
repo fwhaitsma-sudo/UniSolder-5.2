@@ -36,6 +36,8 @@ public class UniSolderComm
         REMOTE_PID_SAVE = 0x15,
         REMOTE_PID_CLEAR = 0x16,
         REMOTE_PID_SAVED = 0x17,
+        PID_SLOT_READ = 0x44,
+        PID_SLOT_WRITE = 0x45,
         REMOTE_READ_SETTINGS = 0x20,
         REMOTE_WRITE_SETTINGS = 0x21,
         REMOTE_RESTART = 0x22,
@@ -171,6 +173,8 @@ public class UniSolderComm
 
     #endregion
 
+    public const int PID_SLOTS = 8;
+    public const int PID_SLOT_LEN = 12;
     public const int RAMP_PARS = 9;
     public const int RAMP_PARS8 = 13;
     public const int RAMP_PARS9 = 16;
@@ -628,6 +632,37 @@ public class UniSolderComm
     }
 
     /// <summary>The 64 settings bytes of the station (the pincode is left out by the firmware), or null.</summary>
+    /// <summary>The saved PID values of all irons (protocol 5): 8 slots of 12 bytes, or null.</summary>
+    public List<byte[]> ReadPidSlots()
+    {
+        var l = new List<byte[]>();
+        for (int slot = 0; slot < PID_SLOTS; slot++)
+        {
+            var r = Request(new byte[] { (byte)Commands.PID_SLOT_READ, (byte)slot }, 1500);
+            if (r == null || r[1] != 0) return null;
+            var d = new byte[PID_SLOT_LEN];
+            Array.Copy(r, 2, d, 0, PID_SLOT_LEN);
+            l.Add(d);
+        }
+        return l;
+    }
+
+    public bool WritePidSlots(List<byte[]> slots)
+    {
+        for (int slot = 0; slot < slots.Count; slot++)
+        {
+            var b = new byte[4 + PID_SLOT_LEN];
+            b[0] = (byte)Commands.PID_SLOT_WRITE;
+            b[1] = 0x5A;
+            b[2] = 0xA5;
+            b[3] = (byte)slot;
+            Array.Copy(slots[slot], 0, b, 4, PID_SLOT_LEN);
+            var r = Request(b, 3000);
+            if (r == null || r[0] != 0) return false;
+        }
+        return true;
+    }
+
     public byte[] ReadSettings()
     {
         var outb = new byte[SETTINGS_SIZE];
