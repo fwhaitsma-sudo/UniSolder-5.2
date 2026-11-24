@@ -25,6 +25,8 @@ namespace UniSolder
         private UniSolderComm.PID PID = null;
 
         private System.Windows.Forms.Timer ConnectionTimer;
+        private int pidTries;
+        private DateTime pidNext = DateTime.MinValue;
 
         public Form1()
         {
@@ -250,6 +252,21 @@ namespace UniSolder
             }
             UpdateConnectionStatus();
             bool connected = lUniSolder.Transport.Connected;
+            //over Bluetooth the first PID query can go unanswered (the link is only just up): ask again a few times, the sliders need it
+            if (connected && !btBusy && lUniSolder.Transport == bt && PID == null)
+            {
+                if (pidTries < 6 && DateTime.Now >= pidNext)
+                {
+                    pidTries++;
+                    pidNext = DateTime.Now.AddSeconds(2);
+                    SSComm.Log.Info("Bluetooth: asking for the PID parameters again (try " + pidTries + ")");
+                    InstrumentChange(null, null);
+                }
+            }
+            else if (!connected || PID != null)
+            {
+                pidTries = 0;
+            }
             if (wasConnected && !connected) toolsTab?.OnDisconnected();
             wasConnected = connected;
         }
