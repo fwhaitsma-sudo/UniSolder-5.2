@@ -29,6 +29,9 @@ namespace UniSolder
         private readonly Timer pollTimer = new Timer();
         private readonly Timer sendTimer = new Timer();
 
+        /// <summary>The user wants the station settings page.</summary>
+        public event Action OpenSettings;
+
         private UniSolderComm.AppInfo info;
         private UniSolderComm.DeviceState state;
         private int pendingTemp = -1;
@@ -113,7 +116,10 @@ namespace UniSolder
             Theme.Style(ironButton, "Switch iron", 280);
             ironButton.Click += Iron_Click;
             ironButton.Visible = false;
-            col.Controls.Add(Theme.Row(sleepButton, ironButton));
+            var settingsButton = new ThemedButton();
+            Theme.Style(settingsButton, "Station settings", 190);
+            settingsButton.Click += (s, e) => OpenSettings?.Invoke();
+            col.Controls.Add(Theme.Row(sleepButton, ironButton, settingsButton));
 
             // settings
             col.Controls.Add(Theme.Heading("Settings backup"));

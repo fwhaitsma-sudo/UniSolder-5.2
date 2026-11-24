@@ -39,6 +39,10 @@ public class UniSolderComm
         REMOTE_READ_SETTINGS = 0x20,
         REMOTE_WRITE_SETTINGS = 0x21,
         REMOTE_RESTART = 0x22,
+        REMOTE_GET_PARAMS = 0x40,
+        REMOTE_SET_PARAM = 0x41,
+        REMOTE_GET_NAME = 0x42,
+        REMOTE_SET_NAME = 0x43,
 
         BL_GET_INFO = 0xE0,
         BL_ERASE_FLASH = 0xE1,
@@ -361,6 +365,46 @@ public class UniSolderComm
         s.ActIron = r[22];
         s.TempStep = Math.Max(1, (int)r[23]);
         return s;
+    }
+
+    /// <summary>All 29 station settings in menu units (protocol 3), or null when the station did not answer.</summary>
+    public int[] GetParams()
+    {
+        var r = Request(new byte[] { (byte)Commands.REMOTE_GET_PARAMS }, 1000);
+        if (r == null) return null;
+        var v = new int[29];
+        for (int i = 0; i < v.Length; i++) v[i] = U16(r, i * 2);
+        return v;
+    }
+
+    /// <summary>Sets one setting. Returns { status, value now in the station } (status 0 done, 1 not settable, 2 out of range, 3 station is in its menu), or null.</summary>
+    public int[] SetParam(int id, int value)
+    {
+        var r = Request(new byte[] { (byte)Commands.REMOTE_SET_PARAM, (byte)id, (byte)(value & 255), (byte)((value >> 8) & 255) }, 1500);
+        if (r == null) return null;
+        SSComm.Log.Info("Setting " + id + " = " + value + " -> status " + r[1] + ", now " + U16(r, 2));
+        return new[] { (int)r[1], U16(r, 2) };
+    }
+
+    /// <summary>The power-up name (up to 10 characters), null when the firmware has no name command (protocol 4).</summary>
+    public string GetName()
+    {
+        var r = Request(new byte[] { (byte)Commands.REMOTE_GET_NAME }, 1000);
+        if (r == null) return null;
+        var sb = new System.Text.StringBuilder();
+        for (int i = 0; i < 10; i++) sb.Append((char)r[i]);
+        return sb.ToString().TrimEnd();
+    }
+
+    /// <summary>0 done, 2 character not allowed, 3 station is in its menu, -1 no answer.</summary>
+    public int SetName(string name)
+    {
+        var b = new byte[11];
+        b[0] = (byte)Commands.REMOTE_SET_NAME;
+        string padded = (name ?? "").PadRight(10, ' ').Substring(0, 10);
+        for (int i = 0; i < 10; i++) b[i + 1] = (byte)padded[i];
+        var r = Request(b, 1500);
+        return r == null ? -1 : r[0];
     }
 
     /// <summary>Sets the temperature in degrees C; the station limits it like the knob. Returns the temperature that was set, or -1.</summary>

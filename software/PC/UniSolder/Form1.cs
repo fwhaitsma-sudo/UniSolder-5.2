@@ -61,6 +61,7 @@ namespace UniSolder
         private Control[] pages;
         private ControlTab controlTab;
         private ToolsTab toolsTab;
+        private SettingsTab settingsTab;
         private bool wasConnected;
 
         /// <summary>
@@ -208,7 +209,10 @@ namespace UniSolder
             moreTab = new MoreTab();
             moreTab.BluetoothSaved += ApplyBluetoothSettings;
             ApplyBluetoothSettings();
-            pages = new Control[] { live, controlTab, pid, toolsTab, firmware, moreTab };
+            settingsTab = new SettingsTab(lUniSolder);
+            settingsTab.Back += () => ShowPage(1);
+            controlTab.OpenSettings += () => ShowPage(6);
+            pages = new Control[] { live, controlTab, pid, toolsTab, firmware, moreTab, settingsTab };
             var host = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Bg };
             foreach (var p in pages)
             {
@@ -231,6 +235,7 @@ namespace UniSolder
         {
             for (int i = 0; i < pages.Length; i++) pages[i].Visible = i == index;
             if (pages[index] == toolsTab) toolsTab.RefreshSessions();
+            if (pages[index] == settingsTab) settingsTab.Reload();
         }
 
         /// <summary>Takes the saved Bluetooth settings; a changed PIN or port allows a new attempt after a rejected PIN.</summary>
@@ -315,7 +320,7 @@ namespace UniSolder
                 liveBarText.Text = "\u2014";
                 liveChart.Notice = null;
             }
-            if (wasConnected && !connected) toolsTab?.OnDisconnected();
+            if (wasConnected && !connected) { toolsTab?.OnDisconnected(); settingsTab?.OnDisconnected(); }
             wasConnected = connected;
         }
 
